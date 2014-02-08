@@ -1,0 +1,51 @@
+WHAT IS IT:
+	A trivial program that gets time from daytime, nist daytime, time or http servers, and optionally updates the system and/or hardware clocks.
+
+AUTHOR:
+daytime and libUseful are (C) 2010 Colum Paget. They are released under the GPL so you may do anything with them that the GPL allows.
+
+Email: colums.projects@gmail.com
+Blogs:
+  tech: http://idratherhack.blogspot.com
+  rants: http://thesingularitysucks.blogspot.com
+
+DISCLAIMER:
+  This is free software. It comes with no guarentees and I take no responsiblity if it makes your computer explode or opens a portal to the demon dimensions, or does anything.
+
+INSTALL:
+After unpacking the tar-ball:
+    tar -zxf daytime-0.1.tar.gz
+
+Do the usual './configure; make; make install'
+    cd daytime-1.0
+    ./configure
+    make
+    make install
+
+
+USAGE:
+
+daytime [-daytime|-time|-nist|-http <server>] [-s] [-r] [-tz <timezone>] [-p <port>]
+	-daytime		Get time from daytime (RFC-867, port 13) server
+	-time		Get time from time (RFC-868, port 123) server
+	-nist		Get time from NIST daytime server
+	-sntp		Get time from an NTP server 
+	-sntp-bcast	Broadcast SNTP packets to '<server>'.
+	-http		Get time from a web server (default)
+	-s		Set clock to time we got from server
+	-r		Set hardware RTC clock (only works on linux I suspect)
+	-p		Port to connect to on server
+	-tz		Timezone of server
+	-servers	List of some servers to try
+	-?		This help
+
+If no server specified, time-a.nist.gov will be tried first, then http time from www.google.com
+
+	'-sntp-bcast' doesn't get the time, it sends it. It sends sntp packets that are only accurate to a second to the address supplied as 'server'. This is usually used to update devices on a local network to a single time. 
+
+EXAMPLES:
+	daytime -daytime www.demon.co.uk -s
+	daytime www.google.co.uk
+	daytime -time time-a.nist.gov -s
+	daytime -nist time-a.nist.gov -s -r
+	daytime -http www.google.co.uk
