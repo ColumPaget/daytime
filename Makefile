@@ -1,19 +1,30 @@
-# Generated automatically from Makefile.in by configure.
 CC = gcc
-VERSION = 0.5
+VERSION = 1.0
 CFLAGS = -g -O2
-LIBS = 
-FLAGS=$(CFLAGS)  -DSTDC_HEADERS=1 -DHAVE_RTC_H=1 
+LIBS = -lc 
+FLAGS=$(CFLAGS) -DPACKAGE_NAME=\"\" -DPACKAGE_TARNAME=\"\" -DPACKAGE_VERSION=\"\" -DPACKAGE_STRING=\"\" -DPACKAGE_BUGREPORT=\"\" -DPACKAGE_URL=\"\" -DSTDC_HEADERS=1 -D_FILE_OFFSET_BITS=64 -DHAVE_SYS_TYPES_H=1 -DHAVE_SYS_STAT_H=1 -DHAVE_STDLIB_H=1 -DHAVE_STRING_H=1 -DHAVE_MEMORY_H=1 -DHAVE_STRINGS_H=1 -DHAVE_INTTYPES_H=1 -DHAVE_STDINT_H=1 -DHAVE_UNISTD_H=1 -DHAVE_RTC_H=1 -DHAVE_LIBC=1 -DHAVE_STIME=1
 INSTALL=/bin/install -c
 prefix=/usr/local
 bindir=$(prefix)${exec_prefix}/bin
+mandir=${prefix}/share/man/man1
+OBJ=common.o sntp.o command-line-args.o
 
-all: 
-	@cd libUseful-2.0; $(MAKE)
-	$(CC) $(FLAGS) $(LIBS) -g -odaytime main.c libUseful-2.0/libUseful-2.0.a
+all: $(OBJ)
+	@cd libUseful-2.5; $(MAKE)
+	$(CC) $(FLAGS) $(LIBS) -g -odaytime $(OBJ) main.c libUseful-2.5/libUseful-2.5.a
+
+common.o: common.h
+	$(CC) -c common.c
+
+command-line-args.o: command-line-args.h
+	$(CC) -c command-line-args.c
+
+sntp.o: sntp.c sntp.h common.h
+	$(CC) -c sntp.c
 
 clean:
-	@rm -f daytime libUseful-2.0/*.o libUseful-2.0/*.a libUseful-2.0/*.so
+	@rm -f daytime *.o libUseful-2.5/*.o libUseful-2.5/*.a libUseful-2.5/*.so config.cache config.status config.log */config.cache */config.status */config.log
 
 install:
 	$(INSTALL) daytime $(bindir)
+	$(INSTALL) daytime.1 $(mandir)

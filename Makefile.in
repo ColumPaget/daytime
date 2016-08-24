@@ -6,13 +6,25 @@ FLAGS=$(CFLAGS) @DEFS@
 INSTALL=@INSTALL@
 prefix=@prefix@
 bindir=$(prefix)@bindir@
+mandir=@mandir@/man1
+OBJ=common.o sntp.o command-line-args.o
 
-all: 
-	@cd libUseful-2.0; $(MAKE)
-	$(CC) $(FLAGS) $(LIBS) -g -odaytime main.c libUseful-2.0/libUseful-2.0.a
+all: $(OBJ)
+	@cd libUseful-2.5; $(MAKE)
+	$(CC) $(FLAGS) $(LIBS) -g -odaytime $(OBJ) main.c libUseful-2.5/libUseful-2.5.a
+
+common.o: common.h
+	$(CC) -c common.c
+
+command-line-args.o: command-line-args.h
+	$(CC) -c command-line-args.c
+
+sntp.o: sntp.c sntp.h common.h
+	$(CC) -c sntp.c
 
 clean:
-	@rm -f daytime libUseful-2.0/*.o libUseful-2.0/*.a libUseful-2.0/*.so
+	@rm -f daytime *.o libUseful-2.5/*.o libUseful-2.5/*.a libUseful-2.5/*.so config.cache config.status config.log */config.cache */config.status */config.log
 
 install:
 	$(INSTALL) daytime $(bindir)
+	$(INSTALL) daytime.1 $(mandir)

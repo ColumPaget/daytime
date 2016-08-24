@@ -1,0 +1,79 @@
+.TH daytime "1" "Aug 2016" "DAYTIME 1.0" "time client/server supporing SNTP, daytime, time and HTTP." 
+
+
+.SH SYNPOSIS
+.P
+	daytime  -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>]
+	daytime  -sntp-bcast <broadcast net>
+
+.SH DESCRIPTION
+.P
+A trivial program that gets time from daytime, nist daytime, time, SNTP or http servers, and optionally updates the system and/or hardware clocks. It can also act as an SNTP server in its own right.
+
+.SH AUTHOR
+.P
+daytime and libUseful are (C) 2010 Colum Paget. They are released under the GPL so you may do anything with them that the GPL allows.
+.P
+Email: colums.projects@gmail.com
+.br
+Website: www.cjpaget.co.uk
+
+.SH DISCLAIMER
+.P
+  This is free software. It comes with no guarentees and I take no responsiblity if it makes your computer explode or opens a portal to the demon dimensions, though if it does the latter I\(aqd like to be notified.
+
+.SH OPTIONS
+.nf
+	 -daytime	Get  time from daytime (RFC-867, port 13) server
+	 -time		Get  time from time (RFC-868, port 123) server
+	 -nist		Get  time from NIST daytime server
+	 -http		Get  time from a web server
+	 -sntp		Get  time from a SNTP server. (Not full NTP, only accurate to seconds). If server arg is \(aqbcast\(aq then wait to recieve sntp broadcast.
+	 -sntp-bcast	Broadcast  SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host
+	 -sntpd	in  Daemon mode (implies -d) and provide an SNTP service.
+	 -d		Daemon  mode. Background and stay running. Needed to recieve broadcast times
+	 -D		Daemon  mode WITHOUT BACKGROUNING.
+	 -t		Sleep  time. Time between checks when in daemon mode, or between SNTP broadcasts (default 30 secs).
+	 -s		Set  clock to time we got from server (requires root permissions).
+	 -r		Set  hardware RTC clock
+	 -tz		Timezone  of server
+	 -servers	List  of some servers to try
+	 -?		This  help
+.fi
+.P
+If no server specified, http time from www.google.com will be tried first, then nist time time-a.nist.gov then ntp from pool.ntp.org.
+Servers can be specified as a host/port pair, like \(aqtime.somewhere.com:8080\(aqSNTP Broadcasts and Daemon mode.
+Receiving the time as an SNTP broadcast requires having daytime stay running and wait for the message. To faciliate this a \(aqdaemon mode\(aq has been added. When -d or -D is used, daytime will stay running and do whatever it was told to do periodically. So:
+	daytime -t 600 -d -sntp-bcast 192.168.1.255 -sntp-bcast 192.168.2.255
+.P
+Will send sntp broadcasts of the current time to the networks 192.168.1.x and 192.168.2.x. The -t flag can be used to specify a time between broadcasts.
+
+.nf
+	daytime \-s \-d \-sntp bcast
+.fi
+.ad b
+
+.P
+Will persist and wait to recieve sntp broadcasts and set the system time from them. NOTE -t cannot be used in sntp broadcast receive mode
+
+.nf
+	daytime \-t 3600 \-s \-http www.google.com
+.fi
+.ad b
+
+.P
+Will check the time with google via http every hour, and set the system time to it
+.SH SNTP Server
+
+.P
+the -sntpd option will put daytime into SNTP server mode, where it will reply to SNTP requests on port 123. This can be combined with other actions, so for example:
+
+.nf
+	daytime \-sntpd \-sntp\-bcast 192.168.2.255 \-daytime time.somewhere.com \-t 60
+.fi
+.ad b
+
+.P
+Will run as an SNTP server, updating time using daytime protocol to \(aqtime.somewhere.com\(aq every 60 seconds and sending sntp broadcasts every 60 seconds too
+.P
+Thanks to Robert Crowley (http://tools.99k.org/) and Andrew Benton for bug reports
