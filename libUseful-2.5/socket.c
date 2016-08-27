@@ -344,7 +344,10 @@ int UDPOpen(const char *Addr, int Port, int Flags)
 	socklen_t salen;
 	int fd;
 
+#ifdef USE_INET6
 	if (IsIP6Address(Addr)) Family=AF_INET6; 
+#endif
+
 	salen=SockAddrCreate(&sa, Family, Addr, Port);
 	fd=socket(Family, SOCK_DGRAM,0);
 	result=bind(fd, sa, salen);
@@ -391,7 +394,9 @@ struct sockaddr *sa=NULL;
 socklen_t salen;
 int result;
 
+#ifdef USE_INET6
 if (IsIP6Address(Host)) Family=AF_INET6; 
+#endif
 
 salen=SockAddrCreate(&sa, Family, Host, Port);
 
@@ -819,6 +824,29 @@ struct hostent *hostdata;
 return((char *) inet_ntoa(*(struct in_addr *) *hostdata->h_addr_list));
 }
 
+
+ListNode *LookupHostIPList(const char *Host)
+{
+struct hostent *hostdata;
+ListNode *List;
+char **ptr;
+	
+   hostdata=gethostbyname(Host);
+   if (!hostdata) 
+   {
+     return(NULL);
+   }
+
+List=ListCreate();
+//inet_ntoa shouldn't need this cast to 'char *', but it emitts a warning
+//without it
+for (ptr=hostdata->h_addr_list; *ptr !=NULL; ptr++)
+{
+ ListAddItem(List, CopyStr(NULL,  (char *) inet_ntoa(*(struct in_addr *) *ptr)));
+}
+
+return(List);
+}
 
 
 

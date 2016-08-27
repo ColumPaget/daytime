@@ -126,6 +126,7 @@ extern "C" {
 
 
 int FDSelect(int fd, int Flags, struct timeval *tv);
+int FDSelectCentisecs(int fd, int Flags, int Centisecs);
 int FDIsWritable(int);
 int FDCheckForBytes(int);
 

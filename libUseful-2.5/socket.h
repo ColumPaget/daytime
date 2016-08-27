@@ -77,6 +77,7 @@ int DownloadToTermStr(STREAM *Connection, STREAM *SaveFile, char *TermStr);
 /* IP Address and host lookup functions */
 char *GetRemoteIP(int sock);
 char *LookupHostIP(const char *Host);
+ListNode *LookupHostIPList(const char *Host);
 char *IPStrToHostName(const char *);
 char *IPtoStr(unsigned long);
 unsigned long StrtoIP(const char *);

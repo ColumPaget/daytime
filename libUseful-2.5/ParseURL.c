@@ -76,14 +76,17 @@ if (ptr)
 	}
 	else ptr=URL;
 
-	ptr=ParseHostDetails(ptr,Host,Port,User,Password);
 }
 else ptr=URL;
 
-while (*ptr=='/') ptr++;
+//ptr will have been set to the right place one way or another
+ptr=ParseHostDetails(ptr,Host,Port,User,Password);
+
 
 if (ptr)
 {
+
+while (*ptr=='/') ptr++;
 if (Path) 
 {
 	*Path=MCopyStr(*Path,"/",ptr,NULL);

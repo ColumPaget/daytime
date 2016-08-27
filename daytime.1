@@ -1,9 +1,9 @@
-.TH daytime "1" "Aug 2016" "DAYTIME 1.0" "time client/server supporing SNTP, daytime, time and HTTP." 
+.TH daytime "1" "Aug 2016" "DAYTIME 2.0" "time client/server supporing SNTP, daytime, time and HTTP." 
 
 
 .SH SYNPOSIS
 .P
-	daytime  -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>]
+	daytime  -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>] [-P <path>]
 	daytime  -sntp-bcast <broadcast net>
 
 .SH DESCRIPTION
@@ -32,10 +32,13 @@ Website: www.cjpaget.co.uk
 	 -sntp-bcast	Broadcast  SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host
 	 -sntpd	in  Daemon mode (implies -d) and provide an SNTP service.
 	 -d		Daemon  mode. Background and stay running. Needed to recieve broadcast times
-	 -D		Daemon  mode WITHOUT BACKGROUNING.
+	 -D		Daemon  mode WITHOUT BACKGROUNDING.
+	 -P		Pidfile path for daemon mode.
 	 -t		Sleep  time. Time between checks when in daemon mode, or between SNTP broadcasts (default 30 secs).
 	 -s		Set  clock to time we got from server (requires root permissions).
 	 -r		Set  hardware RTC clock
+	 -v		Verbose output
+	 -l		Syslog signficant events
 	 -tz		Timezone  of server
 	 -servers	List  of some servers to try
 	 -?		This  help

@@ -24,7 +24,6 @@ int FDSelect(int fd, int Flags, struct timeval *tv)
 fd_set *readset=NULL, *writeset=NULL;
 int result, RetVal=0;
 
-
 if (Flags & SELECT_READ)
 {
   readset=(fd_set *) calloc(1,sizeof(fd_set));
@@ -41,7 +40,12 @@ if (Flags & SELECT_WRITE)
 
 
 result=select(fd+1,readset,writeset,NULL,tv);
-if ((result==-1) && (errno==EBADF)) RetVal=0;
+if (result==-1) 
+{
+	//if (errno==EBADF) RetVal=0;
+	if (errno==EINTR) RetVal=0;
+	else RetVal=-1;
+}
 else if (result  > 0)
 {
     if (readset && FD_ISSET(fd, readset)) RetVal |= SELECT_READ;
@@ -52,6 +56,20 @@ if (readset) free(readset);
 if (writeset) free(writeset);
 
 return(RetVal);
+}
+
+
+
+int FDSelectCentisecs(int fd, int Flags, int Centisecs)
+{
+long val;
+struct timeval tv;
+
+	val=Centisecs % 100;
+	tv.tv_usec=val * 10000;
+	tv.tv_sec=Centisecs / 100;
+
+	return(FDSelect(fd, Flags, &tv));
 }
 
 
@@ -269,7 +287,6 @@ return(FALSE);
 
 int STREAMInternalFinalWriteBytes(STREAM *S, const char *Data, int DataLen)
 {
-fd_set selectset;
 int result=0, count=0, len;
 struct timeval tv;
 
@@ -310,13 +327,7 @@ else
 {
 	if (S->Timeout > 0)
 	{
-		FD_ZERO(&selectset);
-		FD_SET(S->out_fd, &selectset);
-    result=(S->Timeout % 100);
-    tv.tv_usec=result * 10000;
-    tv.tv_sec=S->Timeout / 100;
-		result=select(S->out_fd+1,NULL,&selectset,NULL,&tv);
-
+		result=FDSelectCentisecs(S->out_fd, SELECT_WRITE, S->Timeout);
 		if (result==-1)  return(STREAM_CLOSED);
 		if (result == 0) return(STREAM_TIMEOUT);
 	}
@@ -753,31 +764,22 @@ if (SSL_pending((SSL *) SSL_CTX) > 0) WaitForBytes=FALSE;
 //if ((S->Timeout > 0) && (! (S->Flags & SF_NONBLOCK)) && WaitForBytes)
 if ((S->Timeout > 0) && WaitForBytes)
 {
-   FD_ZERO(&selectset);
-   FD_SET(S->in_fd, &selectset);
-    result=(S->Timeout % 100);
-    tv.tv_usec=result * 10000;
-    tv.tv_sec=S->Timeout / 100;
-   result=select(S->in_fd+1,&selectset,NULL,NULL,&tv);
-
+	result=FDSelectCentisecs(S->in_fd, SELECT_READ, S->Timeout);
 
 	switch (result)
 	{
-		//we are only checking one FD, so should be 1
-		case 1:
-		 read_result=0;
-		break;
-
 		case 0:
 		errno=ETIMEDOUT;
 		read_result=STREAM_TIMEOUT;
 		break;
 
-		default:
-		if (errno==EINTR) read_result=STREAM_TIMEOUT;
-		else read_result=STREAM_CLOSED;
+		case -1:
+		read_result=STREAM_CLOSED;
 		break;
 
+		default:
+		 read_result=0;
+		break;
 	}
 
 }
@@ -833,7 +835,7 @@ return(read_result);
 }
 
 
-inline int STREAMTransferBytesOut(STREAM *S, char *Dest, int DestSize)
+int STREAMTransferBytesOut(STREAM *S, char *Dest, int DestSize)
 {
 int bytes;
 

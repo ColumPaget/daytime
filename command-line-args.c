@@ -46,7 +46,7 @@ fprintf(stdout,"Author: Colum Paget\n");
 fprintf(stdout,"Email: colums.projects@gmail.com\n");
 fprintf(stdout,"Website: www.cjpaget.co.uk\n");
 fprintf(stdout,"\n");
-printf("Usage:	daytime -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>]\n");
+printf("Usage:	daytime -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>] [-P <path>]\n");
 printf("	daytime -sntp-bcast <broadcast net>\n");
 printf("	-daytime	Get time from daytime (RFC-867, port 13) server\n");
 printf("	-time		Get time from time (RFC-868, port 123) server\n");
@@ -56,10 +56,13 @@ printf("	-sntp		Get time from a SNTP server. (Not full NTP, only accurate to sec
 printf("	-sntp-bcast	Broadcast SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host\n");
 printf("	-sntpd	in Daemon mode (implies -d) and provide an SNTP service.\n");
 printf("	-d		Daemon mode. Background and stay running. Needed to recieve broadcast times\n");
-printf("	-D		Daemon mode WITHOUT BACKGROUNING.\n");
+printf("	-D		Daemon mode WITHOUT BACKGROUNDING.\n");
+printf("	-P		Pidfile path for daemon mode.\n");
 printf("	-t		Sleep time. Time between checks when in daemon mode, or between SNTP broadcasts (default 30 secs).\n");
 printf("	-s		Set clock to time we got from server (requires root permissions).\n");
 printf("	-r		Set hardware RTC clock\n");
+printf("	-v		verbose output (mainly for SNTP mode)\n");
+printf("	-l		syslog significant events\n");
 printf("	-tz		Timezone of server\n");
 printf("	-servers	List of some servers to try\n");
 printf("	-?		This help\n\n");
@@ -85,7 +88,6 @@ exit(0);
 
 
 
-
 TArgs *CommandLineParse(int argc, char *argv[])
 {
 TArgs *Args;
@@ -98,6 +100,7 @@ for (i=1; i < argc; i++)
 if (strcmp(argv[i],"-s")==0) Args->Flags |= FLAG_SETSYS;
 else if (strcmp(argv[i],"-r")==0) Args->Flags |= FLAG_SETRTC;
 else if (strcmp(argv[i],"-d")==0) Args->Flags |= FLAG_DEMON | FLAG_BACKGROUND;
+else if (strcmp(argv[i],"-v")==0) Args->Flags |= FLAG_VERBOSE;
 else if (strcmp(argv[i],"-D")==0) 
 {
 	Args->Flags |= FLAG_DEMON;
@@ -111,9 +114,16 @@ else if (strcmp(argv[i],"-http")==0) Args->Flags |= FLAG_HTTP;
 else if (strcmp(argv[i],"-ntp")==0) Args->Flags |= FLAG_SNTP;
 else if (strcmp(argv[i],"-sntp")==0) Args->Flags |= FLAG_SNTP;
 else if (strcmp(argv[i],"-sntpd")==0) Args->Flags |= FLAG_SNTPD | FLAG_DEMON | FLAG_BACKGROUND;
-else if (strcmp(argv[i],"-sntp-bcast")==0) SetupSNTPBcast(Args,argv[++i]);
+else if (strcmp(argv[i],"-sntp-bcast")==0) SNTPSetupBcast(Args,argv[++i]);
 else if (strcmp(argv[i],"-t")==0) Args->SleepTime=atoi(argv[++i]);
 else if (strcmp(argv[i],"-tz")==0) CurrTimeZone=CopyStr(CurrTimeZone,argv[++i]);
+/*
+else if (strcmp(argv[i],"-key")==0) 
+{
+	AuthKeySet(argv[++i]);
+	Args->Flags |= FLAG_AUTH;
+}
+*/
 else if (strcmp(argv[i],"-?")==0) PrintUsage();
 else if (strcmp(argv[i],"-help")==0) PrintUsage();
 else if (strcmp(argv[i],"--help")==0) PrintUsage();
@@ -121,16 +131,19 @@ else if (strcmp(argv[i],"-h")==0) PrintUsage();
 else if (strcmp(argv[i],"-servers")==0) PrintServers();
 else 
 {
+  if (strcasecmp(argv[i],"bcast")==0)
+  {
+    Args->Flags &= ~FLAG_SNTP;
+    Args->Flags |= FLAG_BCAST_RECV;
+  }
+	else 
+	{
 	Tempstr=MCopyStr(Tempstr, "tcp:",argv[i],NULL);
 	ParseURL(Tempstr, NULL, &Args->Host, &Token, NULL, NULL, NULL, NULL);
 
 	if (StrValid(Token)) Args->Port=atoi(Token);
-	//if we are told to listen for broadcasts, then sleep time must be 0
-	//otherwise a broadcast will come in while we are sleeping, and when we
-	//wake up we will think it's recent when it's not
-	if (strcasecmp(Args->Host,"bcast")==0) Args->SleepTime=0;
+	}
 }
-
 }
 
 DestroyString(Tempstr);

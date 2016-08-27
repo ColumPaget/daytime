@@ -3,11 +3,10 @@
 
 #include "common.h"
 
-int GetTimeFromSNTPHost(char *Host, int Port, int Flags, struct tm *NewTimetm);
-void SetupSNTPBcast(TArgs *Args, const char *Data);
-int SNTPBroadcast(char *BCastAddr, int Port);
+int SNTPGetTime(const char *Host, int Port, int Flags, struct timeval *Time);
+void SNTPSetupBcast(TArgs *Args, const char *Data);
+int SNTPBroadcast(const char *BCastAddr, int Port);
 int SNTPBroadcastNets(ListNode *Nets);
-int SNTPServer(const char *URL);
-void SNTPServerProcess(STREAM *S);
+void SNTPReceive(STREAM *S);
 
 #endif

@@ -1,5 +1,6 @@
 #include "common.h"
 #include "sntp.h"
+#include "sysclock.h"
 #include "command-line-args.h"
 
 
@@ -15,11 +16,12 @@ setenv("TZ",CurrTimeZone,TRUE);
 
 
 
-int GetTimeFromDayTimeHost(char *HostName, int port, struct tm *NewTimetm)
+int GetTimeFromDayTimeHost(char *HostName, int port, struct timeval *Time)
 {
 char *Tempstr=NULL, *Line=NULL;
 STREAM *S;
 int count, result;
+struct tm TM;
 
 if (HostName ==NULL) return(FALSE);
 S=STREAMCreate();
@@ -32,13 +34,17 @@ if (! STREAMTCPConnect(S,HostName,port,0,0,0))
 
 if (S)
 {
-Line=STREAMReadLine(Line,S);
-StripTrailingWhitespace(Line);
-
-SetTimeZone();
-
-if (strptime(Line,"%a %b %d %H:%M:%S %Y",NewTimetm) !=NULL) result=TRUE;
-STREAMClose(S);
+	Line=STREAMReadLine(Line,S);
+	StripTrailingWhitespace(Line);
+	
+	SetTimeZone();
+	
+	if (strptime(Line,"%a %b %d %H:%M:%S %Y", &TM) !=NULL) 
+	{
+		Time->tv_sec=mktime(&TM);
+		result=TRUE;
+	}
+	STREAMClose(S);
 }
 else
 {
@@ -53,11 +59,12 @@ return(result);
 }
 
 
-int GetTimeFromNISTHost(char *HostName, int port, struct tm *NewTimetm)
+int GetTimeFromNISTHost(char *HostName, int port, struct timeval *Time)
 {
 char *Tempstr=NULL, *Line=NULL, *ptr;
-STREAM *S;
 int count, result;
+struct tm TM;
+STREAM *S;
 
 if (StrLen(HostName)==0) Tempstr=CopyStr(Tempstr,"time-a.nist.gov");
 else Tempstr=CopyStr(Tempstr,HostName);
@@ -86,7 +93,8 @@ if (S)
 	ptr=GetToken(Line,"\\S",&Tempstr,0);
 	if (ptr) 
 	{
-		if (strptime(ptr,"%y-%m-%d %H:%M:%S",NewTimetm) !=NULL) result=TRUE;
+		if (strptime(ptr,"%y-%m-%d %H:%M:%S",&TM) !=NULL) result=TRUE;
+		Time->tv_sec=mktime(&TM);
 	}
 	STREAMClose(S);
 }
@@ -105,11 +113,10 @@ return(result);
 
 
 
-int GetTimeFromTimeHost(char *HostName, int port, struct tm *NewTimetm)
+int GetTimeFromTimeHost(char *HostName, int port, struct timeval *Time)
 {
 unsigned long timeval;
 char *Tempstr=NULL;
-struct tm *TempTimetm=NULL;
 int result=FALSE;
 STREAM *S;
 
@@ -130,9 +137,7 @@ timeval=ntohl(timeval);
 //this 32 bit value represents seconds since 1900, we need to convert this to
 //seconds since 1970
 timeval-=Time_Server_Offset;
-TempTimetm=gmtime((time_t *)&timeval);
-
-if (TempTimetm !=NULL) *NewTimetm=*TempTimetm;
+Time->tv_sec=timeval;
 result=TRUE;
 }
 else
@@ -148,11 +153,12 @@ return(result);
 
 
 
-int GetTimeFromHTTPHost(char *HostName, int port, struct tm *NewTimetm)
+int GetTimeFromHTTPHost(char *HostName, int port, struct timeval *Time)
 {
-STREAM *S;
 char *Tempstr=NULL, *Line=NULL, *Token=NULL, *ptr, *tzptr;
 int result=FALSE;
+struct tm TM;
+STREAM *S;
 
 S=STREAMCreate();
 
@@ -184,7 +190,11 @@ while (Line)
 
 	SetTimeZone();
 
-	if (strptime(ptr,"%a, %d %b %Y %H:%M:%S",NewTimetm) !=NULL) result=TRUE;
+	if (strptime(ptr,"%a, %d %b %Y %H:%M:%S",&TM) !=NULL) 
+	{
+		Time->tv_sec=mktime(&TM);
+		result=TRUE;
+	}
   }
   Line=STREAMReadLine(Line,S);
 }
@@ -198,62 +208,7 @@ return(result);
 
 
 
-int UpdateSystemClock(struct tm *NewTimetm)
-{
-time_t NewTime;
-struct timeval tv;
-
-NewTime=mktime(NewTimetm);
-
-#ifdef HAS_STIME
-if (stime(&NewTime)!=0) return(FALSE);
-#else
-tv.tv_sec=NewTime;
-tv.tv_usec=0;
-settimeofday(&tv, NULL);
-#endif
-
-return(TRUE);
-}
-
-
-
-
-
-#ifdef HAVE_RTC_H
-#include <linux/rtc.h>
-#endif
-
-int  UpdateCMOSClock(struct tm *NewTimetm)
-{
-int result=TRUE;
-#ifdef HAVE_RTC_H
-int RTC_DEV_FILE;
-struct rtc_time RtcTime;
-
-
-result=FALSE;
-RTC_DEV_FILE=open("/dev/rtc0",O_RDONLY);
-if (RTC_DEV_FILE == -1) RTC_DEV_FILE=open("/dev/rtc",O_RDONLY);
-if (RTC_DEV_FILE > -1) 
-{
-	RtcTime.tm_sec=NewTimetm->tm_sec;
-	RtcTime.tm_min=NewTimetm->tm_min;
-	RtcTime.tm_hour=NewTimetm->tm_hour;
-	RtcTime.tm_mday=NewTimetm->tm_mday;
-	RtcTime.tm_mon=NewTimetm->tm_mon;
-	RtcTime.tm_year=NewTimetm->tm_year;
-	if (ioctl(RTC_DEV_FILE,RTC_SET_TIME,&RtcTime) !=0) perror("Couldn't set Hardware clock: ");
-	else result=TRUE;
-	close(RTC_DEV_FILE);
-}
-#endif
-
-return(result);
-}
-
-
-int GetTimeFromHost(int Flags, char *Host, int Port, struct tm *NewTimetm)
+int GetTimeFromHost(int Flags, char *Host, int Port, struct timeval *Time)
 {
 int port=0, result=FALSE;
 
@@ -262,27 +217,27 @@ if (Port > 0) port=Port;
 if (Flags & FLAG_TIME)
 {
   if (port==0) port=37;
-  result=GetTimeFromTimeHost(Host,port,NewTimetm);
+  result=GetTimeFromTimeHost(Host,port,Time);
 }
 else if (Flags & FLAG_NIST)
 {
   if (port==0) port=13;
-  result=GetTimeFromNISTHost(Host,port,NewTimetm);
+  result=GetTimeFromNISTHost(Host,port,Time);
 }
 else if (Flags & FLAG_DAYTIME)
 {
   if (port==0) port=13;
-	result=GetTimeFromDayTimeHost(Host,port,NewTimetm);
+	result=GetTimeFromDayTimeHost(Host,port,Time);
 }
 else if (Flags & FLAG_SNTP) 
 {
   if (port==0) port=123;
-  result=GetTimeFromSNTPHost(Host, port, Flags, NewTimetm);
+  result=SNTPGetTime(Host, port, Flags, Time);
 }
 else if (Flags & FLAG_HTTP)
 {
   if (port==0) port=80;
-  result=GetTimeFromHTTPHost(Host,port,NewTimetm);
+  result=GetTimeFromHTTPHost(Host,port,Time);
 }
 
 return(result);
@@ -292,73 +247,40 @@ return(result);
 
 int GoDayTime(TArgs *Args)
 {
+struct timeval Time;
 int result=FALSE;
-struct tm NewTimetm;
-char *Tempstr=NULL;
 
+memset(&Time, 0, sizeof(Time));
 
 //If we've not been told to do anything, then try some default
 //behaviors
 if ((Args->Flags==0) && (StrLen(Args->Host)==0))
 {
-	result=GetTimeFromHost(FLAG_HTTP, "", 0, &NewTimetm);
-	if (! result) result=GetTimeFromHost(FLAG_NIST, "", 0, &NewTimetm);
-	if (! result) result=GetTimeFromHost(FLAG_SNTP, "", 0, &NewTimetm);
+	result=GetTimeFromHost(FLAG_HTTP, "", 0, &Time);
+	if (! result) result=GetTimeFromHost(FLAG_NIST, "", 0, &Time);
+	if (! result) result=GetTimeFromHost(FLAG_SNTP, "", 0, &Time);
 }
-else result=GetTimeFromHost(Args->Flags, Args->Host, Args->Port, &NewTimetm);
-
-
+else result=GetTimeFromHost(Args->Flags, Args->Host, Args->Port, &Time);
 
 //if we didn't get a command from any timeserver, then don't print output
-if (result !=TRUE) return(result);
+if (result == TRUE) HandleReceivedTime(&Time);
 
-
-printf("\n%s\n",asctime(&NewTimetm));
-
-
-if (Args->Flags & FLAG_SETSYS)
-{
-	if (! UpdateSystemClock(&NewTimetm))
-	{
-		printf("System clock update failed\n");
-		syslog(LOG_ERR,"Failed to update system clock");
-	}
-	else
-	{
-		printf("System clock set\n");
-		syslog(LOG_INFO,"System clock set");
-	}
-}
-
-if (Args->Flags & FLAG_SETRTC)
-{
-	if (! UpdateCMOSClock(&NewTimetm))
-	{
-		printf("Hardware clock update failed\n");
-		syslog(LOG_ERR,"Failed to update hardware clock");
-	}
-	else
-	{
-		printf("Hardware clock set\n");
-		syslog(LOG_INFO,"Hardware clock set");
-	}
-}
 
 return(result);
 }
 
 
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 char *ptr;
-TArgs *Args;
-STREAM *SNTPD, *S=NULL;
+STREAM *SNTPD=NULL, *S=NULL;
 ListNode *Connections;
 struct timeval tv;
 time_t NextSync=0;
-int result;
+int result, ExitVal=0;
 
+LastError=SetStrLen(LastError, 255);
 Connections=ListCreate();
 ptr=getenv("TZ");
 if (ptr) ptr=strchr(ptr,'=');
@@ -368,14 +290,16 @@ if (StrLen(OldTimeZone)==0) OldTimeZone=CopyStr(OldTimeZone,"");
 
 Args=CommandLineParse(argc, argv);
 
+if (Args->Flags & FLAG_SYSLOG) openlog("daytime",LOG_PID,0);
 if (Args->Flags & FLAG_BACKGROUND) demonize();
 
 if (StrValid(Args->PidFilePath)) WritePidFile(Args->PidFilePath);
-if (Args->Flags & FLAG_SNTPD) 
+if (Args->Flags & (FLAG_SNTPD | FLAG_BCAST_RECV)) 
 {
 	SNTPD=BindPort("",123);
-	ListAddItem(Connections, SNTPD);
+	if (SNTPD) ListAddItem(Connections, SNTPD);
 }
+srand(getpid() + time(NULL));
 
 while (1)
 {
@@ -387,11 +311,11 @@ while (1)
 		//If we are told to broadcast the time using SNTP, do so. This happens here so that we broadcast
 		//the latest time we got from timeservers above, IF we got a time from a timeserver
 		//If we didn't get a time, we still run this command to broadcast the system time
-		if (Args->Flags & FLAG_SNTP_BCAST) result=SNTPBroadcastNets(Args->BcastNets);
+	if (Args->Flags & FLAG_BCAST_SEND) result=SNTPBroadcastNets(Args->BcastNets);
 
-		NextSync=TimeNow.tv_sec + Args->SleepTime;
+	NextSync=TimeNow.tv_sec + Args->SleepTime;
 	}
-	if (S && (S==SNTPD)) SNTPServerProcess(S);
+	if (S && (S==SNTPD)) SNTPReceive(S);
 
 	if (! (Args->Flags & FLAG_DEMON)) break;
 	tv.tv_sec=Args->SleepTime;
@@ -400,4 +324,6 @@ while (1)
 
 CurrTimeZone=CopyStr(CurrTimeZone,OldTimeZone);
 SetTimeZone();
+
+return(ExitVal);
 }
