@@ -1,11 +1,12 @@
 #include "common.h"
 
-char *Version="2.0";
+char *Version="2.1";
 char *OldTimeZone=NULL, *CurrTimeZone=NULL;
 struct timeval TimeNow;
 char *LastError=NULL;
 TArgs *Args=NULL;
 ListNode *AuthKeys=NULL;
+int SntpVersion=4;
 
 STREAM *BindPort(const char *URL, int DefaultPort)
 {

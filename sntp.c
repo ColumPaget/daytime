@@ -138,7 +138,7 @@ void SNTPSetupPacket(SNTPPacket *Packet, const char *RefIdent, int Mode, int Pol
 uint32_t secs, fract;
 
 Packet->Leap=0;
-Packet->Version = 4;
+Packet->Version = SntpVersion;
 Packet->Mode=Mode;
 Packet->Poll=Poll;
 Packet->Stratum=Stratum;
@@ -157,6 +157,9 @@ Packet->OriginateFraction=Packet->TransmitFraction;
 Packet->ReceivedTimestamp=htonl(secs);
 Packet->ReceivedFraction=htonl(fract);
 }
+
+Packet->ReferenceTimestamp=htonl(secs);
+Packet->ReferenceFraction=htonl(fract);
 
 Packet->TransmitTimestamp=htonl(secs);
 Packet->TransmitFraction=htonl(fract);
@@ -308,7 +311,7 @@ val=1;
 setsockopt(S->out_fd, SOL_SOCKET, SO_BROADCAST,&val,sizeof(int));
 
 Packet=(SNTPPacket *) calloc(1,sizeof(SNTPPacket));
-SNTPSetupPacket(Packet, "0000", SNTP_BCAST, 0, 0);
+SNTPSetupPacket(Packet, "0000", SNTP_BCAST, 0, 1);
 if (Args->Flags & FLAG_AUTH) len=SNTPSignMessage(Packet);
 STREAMSendDgram(S, BCastAddr, Port, (char *) Packet, PKT_LEN);
 free(Packet);

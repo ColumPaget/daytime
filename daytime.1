@@ -3,8 +3,8 @@
 
 .SH SYNPOSIS
 .P
-	daytime  -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>] [-P <path>]
-	daytime  -sntp-bcast <broadcast net>
+	daytime  -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>] [-P <path>] 
+	daytime  -sntp-bcast <broadcast net> [-sntp-version <version>]
 
 .SH DESCRIPTION
 .P
@@ -29,7 +29,8 @@ Website: www.cjpaget.co.uk
 	 -nist		Get  time from NIST daytime server
 	 -http		Get  time from a web server
 	 -sntp		Get  time from a SNTP server. (Not full NTP, only accurate to seconds). If server arg is \(aqbcast\(aq then wait to recieve sntp broadcast.
-	 -sntp-bcast	Broadcast  SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host
+	 -sntp-bcast	 Broadcast  SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host
+	 -sntp-version Set NTP version. Some devices only accept version 1 in broadcast mode. 
 	 -sntpd	in  Daemon mode (implies -d) and provide an SNTP service.
 	 -d		Daemon  mode. Background and stay running. Needed to recieve broadcast times
 	 -D		Daemon  mode WITHOUT BACKGROUNDING.

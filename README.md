@@ -35,7 +35,8 @@ USAGE
 		 -nist		Get  time from NIST daytime server
 		 -http		Get  time from a web server
 		 -sntp		Get  time from a SNTP server. (Not full NTP, only accurate to seconds). If server arg is 'bcast' then wait to recieve sntp broadcast.
-		 -sntp-bcast	Broadcast  SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host
+		 -sntp-bcast	 Broadcast  SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host
+		 -sntp-version Set NTP version number. Some devices only accept version 1 in broadcast packets (it should be 4).
 		 -sntpd	in  Daemon mode (implies -d) and provide an SNTP service.
 		 -d		Daemon  mode. Background and stay running. Needed to recieve broadcast times
 		 -D		Daemon  mode WITHOUT BACKGROUNING.

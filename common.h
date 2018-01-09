@@ -51,6 +51,7 @@ extern char *OldTimeZone, *CurrTimeZone;
 extern struct timeval TimeNow;
 extern TArgs *Args;
 extern char *LastError;
+extern int SntpVersion;
 
 STREAM *BindPort(const char *URL, int DefaultPort);
 long diff_millisecs(struct timeval *t1, struct timeval *t2);
