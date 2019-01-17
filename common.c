@@ -7,6 +7,7 @@ char *LastError=NULL;
 TArgs *Args=NULL;
 ListNode *AuthKeys=NULL;
 int SntpVersion=4;
+int SntpStratum=3;
 
 STREAM *BindPort(const char *URL, int DefaultPort)
 {

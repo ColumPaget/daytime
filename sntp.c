@@ -311,7 +311,7 @@ val=1;
 setsockopt(S->out_fd, SOL_SOCKET, SO_BROADCAST,&val,sizeof(int));
 
 Packet=(SNTPPacket *) calloc(1,sizeof(SNTPPacket));
-SNTPSetupPacket(Packet, "0000", SNTP_BCAST, 0, 1);
+SNTPSetupPacket(Packet, "0000", SNTP_BCAST, 0, SntpStratum);
 if (Args->Flags & FLAG_AUTH) len=SNTPSignMessage(Packet);
 STREAMSendDgram(S, BCastAddr, Port, (char *) Packet, PKT_LEN);
 free(Packet);
@@ -352,7 +352,7 @@ uint64_t millis;
 
 if (Packet->Mode==SNTP_CLIENT)
 {
-	SNTPSetupPacket(Packet, "LOCL", SNTP_SERVER, 10, 0);
+	SNTPSetupPacket(Packet, "LOCL", SNTP_SERVER, 10, SntpStratum);
 
 	millis=ConvertFloatTimeToMillisecs(SNTPConvertTime(&Packet->ReceivedTimestamp) - SNTPConvertTime(&Packet->OriginateTimestamp));
 	if (Args->Flags & FLAG_VERBOSE) printf("SNTP Request from %s. ClockDifference: %ld secs %ld ms\n", Addr, (long) millis / 1000,(long) millis % 1000);
