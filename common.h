@@ -13,6 +13,9 @@
 #include <errno.h>
 #include "libUseful-2.5/libUseful.h"
 
+
+#define VERSION "2.2"
+
 #define FATAL -1
 
 //this is the differenct in seconds between when time servers base their
@@ -46,7 +49,6 @@ char *PidFilePath;
 ListNode *BcastNets;
 } TArgs;
 
-extern char *Version;
 extern char *OldTimeZone, *CurrTimeZone;
 extern struct timeval TimeNow;
 extern TArgs *Args;

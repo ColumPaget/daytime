@@ -623,7 +623,6 @@ ac_includes_default="\
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
 subdirs
-VERSION
 EGREP
 GREP
 CPP
@@ -3551,9 +3550,6 @@ rm -rf conftest*
 
 fi
 
-
-
-VERSION="1.0"
 
 
 

@@ -1,6 +1,5 @@
 #include "common.h"
 
-char *Version="2.1";
 char *OldTimeZone=NULL, *CurrTimeZone=NULL;
 struct timeval TimeNow;
 char *LastError=NULL;

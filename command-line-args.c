@@ -39,9 +39,21 @@ exit(0);
 }
 
 
+void PrintVersion()
+{
+fprintf(stdout,"\ndaytime (daytime) %s\n",VERSION);
+fprintf(stdout,"Copyright (C) 2010 Colum Paget\n");
+fprintf(stdout, "License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n");
+fprintf(stdout,"This is free software: you are free to change and redistribute it.\n");
+fprintf(stdout,"There is NO WARRANTY, to the extent permitted by law.\n");
+fprintf(stdout, "Written by Colum Paget\n");
+exit(0);
+}
+
+
 void PrintUsage()
 {
-fprintf(stdout,"\nDaytime: version %s\n",Version);
+fprintf(stdout,"\nDaytime: version %s\n",VERSION);
 fprintf(stdout,"Author: Colum Paget\n");
 fprintf(stdout,"Email: colums.projects@gmail.com\n");
 fprintf(stdout,"Website: www.cjpaget.co.uk\n");
@@ -133,6 +145,9 @@ else if (strcmp(argv[i],"-?")==0) PrintUsage();
 else if (strcmp(argv[i],"-help")==0) PrintUsage();
 else if (strcmp(argv[i],"--help")==0) PrintUsage();
 else if (strcmp(argv[i],"-h")==0) PrintUsage();
+else if (strcmp(argv[i],"-version")==0) PrintVersion();
+else if (strcmp(argv[i],"--version")==0) PrintVersion();
+else if (strcmp(argv[i],"-?")==0) PrintUsage();
 else if (strcmp(argv[i],"-servers")==0) PrintServers();
 else 
 {
