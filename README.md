@@ -1,6 +1,6 @@
 WHAT IS IT
 ==========
-	A trivial program that gets time from daytime, nist daytime, time, SNTP or http servers, and optionally updates the system and/or hardware clocks. It can also act as an SNTP server in its own right.
+	A program that gets time from daytime, nist daytime, time, SNTP or http servers, and optionally updates the system and/or hardware clocks. It can also act as an SNTP server in its own right, or set date and time from the command-line using a number of different date and time formats.
 
 AUTHOR
 ======
@@ -28,27 +28,63 @@ Do the usual './configure; make; make install'
 USAGE
 =====
 
-		 daytime  -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>]
-		 daytime  -sntp-bcast <broadcast net>
-		 -daytime	Get  time from daytime (RFC-867, port 13) server
-		 -time		Get  time from time (RFC-868, port 123) server
-		 -nist		Get  time from NIST daytime server
-		 -http		Get  time from a web server
-		 -sntp		Get  time from a SNTP server. (Not full NTP, only accurate to seconds). If server arg is 'bcast' then wait to recieve sntp broadcast.
-		 -sntp-bcast	 Broadcast  SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host
-		 -sntp-version Set NTP version number. Some devices only accept version 1 in broadcast packets (it should be 4).
-		 -sntpd	in  Daemon mode (implies -d) and provide an SNTP service.
-		 -d		Daemon  mode. Background and stay running. Needed to recieve broadcast times
-		 -D		Daemon  mode WITHOUT BACKGROUNING.
-		 -t		Sleep  time. Time between checks when in daemon mode, or between SNTP broadcasts (default 30 secs).
-		 -s		Set  clock to time we got from server (requires root permissions).
-		 -r		Set  hardware RTC clock
-		 -tz		Timezone  of server
-		 -servers	List  of some servers to try
-		 -?		This  help
+   daytime -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>]
+   daytime -sntp-bcast <broadcast net> [-sntp-version <version>]
+   daytime -sntpd [-sntp-stratum <stratum>] [-sntp-version <version>]
+   daytime -S [date or time specifier]
+
+
+OPTIONS
+=======
+
+   -daytime	Get time from daytime (RFC-867, port 13) server
+   -time		Get time from time (RFC-868, port 123) server
+   -nist		Get time from NIST daytime server
+   -http		Get time from a web server
+   -sntp		Get time from a SNTP server. (Not full NTP, only accurate to seconds). If server arg is 'bcast' then wait to recieve sntp broadcast.
+   -sntp-bcast	Broadcast SNTP Packets to supplied address. This arg can be used multiple times to bcast to multiple nets on a multihomed host
+   -sntp-version	Version of SNTP in packet. Some devices only accept '1' as the version in sntp broadcasts, when it should be '4'.
+   -sntp-stratum	Stratum of SNTP in packet. This is a measure of how many 'hops' away from an atomic clock an ntp server is. Defaults to '3'.
+   -sntpd	in Daemon mode (implies -d) and provide an SNTP service.
+   -d		Daemon mode. Background and stay running. Needed to recieve broadcast times
+   -D		Daemon mode WITHOUT BACKGROUNDING.
+   -P		Pidfile path for daemon mode.
+   -t		Sleep time. Time between checks when in daemon mode, or between SNTP broadcasts (default 30 secs).
+   -s		Set clock to time we got from server (requires root permissions).
+   -S		Set clock from the command-line (requires root permissions).
+   -r		Set hardware RTC clock
+   -v		verbose output (mainly for SNTP mode)
+   -l		syslog significant events
+   -tz		Timezone of server
+   -servers	List of some servers to try
+   -?		This help
 
 If no server specified, http time from www.google.com will be tried first, then nist time time-a.nist.gov then ntp from pool.ntp.org.
 Servers can be specified as a host/port pair, like 'time.somewhere.com:8080'
+
+
+Command-line set date/time.
+===========================
+
+The '-S' switch allows setting a date or time from the command-line. This can be expressed in one of the following formats:
+
+   HH:MM                -  time expressed in hours and minutes, date will stay as current.
+   HH:MM:SS             -  time expressed in hours, minutes and seconds, date will stay as current.
+   YYYY/mm/dd           -  date expressed in year, month, day. Time will stay as current. 
+   dd/mm/YYYY           -  date expressed in year, month, day. Time will stay as current. 
+   YYYY/mm/dd HH:MM:SS  -  date and time. 
+   dd/mm/YYYY HH:MM:SS  -  date and time. 
+   HH:MM:SS YYYY/mm/dd  -  date and time. 
+   HH:MM:SS dd/mm/YYYY  -  date and time. 
+   YYYY-mm-ddTHH:MM:SS  -  date and time. 
+   YYYY/mm/ddTHH:MM:SS  -  date and time. 
+   Sun Jan 20 15:55:37 GMT 2019   -  standard output of the 'date' command
+   Sun Jan 20 15:55:37 2019       -  'date' style without zone
+   Jan 20 15:55:37 GMT 2019       -  'date' style without day
+   Jan 20 15:55:37 2019           -  'date' style without day and zone
+
+any character can be used as a separator in date, but time needs to use ':'
+
 
 SNTP Broadcasts and Daemon mode.
 ================================

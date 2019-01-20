@@ -271,6 +271,87 @@ return(result);
 
 
 
+void SetTimeFromCommandLine(TArgs *Args)
+{
+char *Date=NULL, *Time=NULL, *Tempstr=NULL, *wptr;
+const char *DateFormats[]={"%a %b %d %H:%M:%S %Z %Y", "%a %b %d %H:%M:%S %Y", "%b %d %H:%M:%S %Z %Y", "%b %d %H:%M:%S %Y", NULL};
+struct tm TM;
+struct timeval tv;
+const char *ptr;
+int i;
+
+
+if (! isdigit(*Args->SetTime))
+{
+	tv.tv_usec=0;
+	for (i=0; DateFormats[i] != NULL; i++)
+	{
+		if (strptime(Args->SetTime, DateFormats[i], &TM) != -1) break;
+	}
+}
+else
+{
+	//if SetTime contains a 'T' followed by a digit then we have
+	//the format 1990/10/18T11:10:00
+	wptr=strchr(Args->SetTime, 'T');
+	if (wptr && isdigit(*(wptr+1))) *wptr=' ';
+	
+	
+	ptr=GetToken(Args->SetTime, " ", &Date, 0);
+	ptr=GetToken(ptr, " ", &Time, 0);
+	if (strchr(Date, ':')) 
+	{
+		Tempstr=CopyStr(Tempstr, Time);
+		Time=CopyStr(Time, Date);
+		Date=CopyStr(Date, Tempstr);
+	}
+	
+	if (StrLen(Time)==0) Time=CopyStr(Time, GetDateStr("%H:%M:%S",NULL));
+	else if (StrLen(Time)==5) Time=CatStr(Time, ":00");
+	
+	if (StrLen(Date)==0) Date=CopyStr(Date, GetDateStr("%Y/%m/%d", NULL));
+	else
+	{
+		ptr=strrchr(Date, '/');
+		//we have a 4-digit year at the end of the date
+		if (StrLen(ptr) == 5)
+		{
+			Tempstr=MCopyStr(Tempstr, ptr+1, "/", NULL);
+			Tempstr=CatStrLen(Tempstr, Date+3, 2);
+			Tempstr=CatStr(Tempstr, "/");
+			Tempstr=CatStrLen(Tempstr, Date, 2);
+			Date=CopyStr(Date, Tempstr);
+		}
+		else 
+		{
+			Tempstr=CopyStrLen(Tempstr, Date, 2);
+			Tempstr=CatStr(Tempstr, "/");
+			Tempstr=CatStrLen(Tempstr, Date+3, 2);
+			Tempstr=CatStr(Tempstr, "/");
+			Tempstr=CatStr(Tempstr, Date+6);
+			Date=CopyStr(Date, Tempstr);
+		}
+	
+	}
+
+	Tempstr=MCopyStr(Tempstr, Date, " ", Time, NULL);
+	printf("Time Parsed As: %s\n",Tempstr);
+	strptime(Tempstr, "%Y/%m/%d %H:%M:%S", &TM);
+}
+	
+	
+tv.tv_sec=mktime(&TM);
+tv.tv_usec=0;
+
+HandleReceivedTime(&tv);
+
+
+DestroyString(Tempstr);
+DestroyString(Date);
+DestroyString(Time);
+}
+
+
 int main(int argc, char *argv[])
 {
 char *ptr;
@@ -290,40 +371,44 @@ if (StrLen(OldTimeZone)==0) OldTimeZone=CopyStr(OldTimeZone,"");
 
 Args=CommandLineParse(argc, argv);
 
-if (Args->Flags & FLAG_SYSLOG) openlog("daytime",LOG_PID,0);
-if (Args->Flags & FLAG_BACKGROUND) demonize();
-
-if (StrValid(Args->PidFilePath)) WritePidFile(Args->PidFilePath);
-if (Args->Flags & (FLAG_SNTPD | FLAG_BCAST_RECV)) 
+if (Args->Flags & FLAG_CMDLINE_TIME) SetTimeFromCommandLine(Args);
+else
 {
-	SNTPD=BindPort("",123);
-	if (SNTPD) ListAddItem(Connections, SNTPD);
-}
-srand(getpid() + time(NULL));
+	if (Args->Flags & FLAG_SYSLOG) openlog("daytime",LOG_PID,0);
+	if (Args->Flags & FLAG_BACKGROUND) demonize();
 
-while (1)
-{
-	gettimeofday(&TimeNow, NULL);
-	if (TimeNow.tv_sec > NextSync) 
+	if (StrValid(Args->PidFilePath)) WritePidFile(Args->PidFilePath);
+	if (Args->Flags & (FLAG_SNTPD | FLAG_BCAST_RECV)) 
 	{
-		if (GoDayTime(Args) == FATAL) break;
-
-		//If we are told to broadcast the time using SNTP, do so. This happens here so that we broadcast
-		//the latest time we got from timeservers above, IF we got a time from a timeserver
-		//If we didn't get a time, we still run this command to broadcast the system time
-	if (Args->Flags & FLAG_BCAST_SEND) result=SNTPBroadcastNets(Args->BcastNets);
-
-	NextSync=TimeNow.tv_sec + Args->SleepTime;
+		SNTPD=BindPort("",123);
+		if (SNTPD) ListAddItem(Connections, SNTPD);
 	}
-	if (S && (S==SNTPD)) SNTPReceive(S);
+	srand(getpid() + time(NULL));
 
-	if (! (Args->Flags & FLAG_DEMON)) break;
-	tv.tv_sec=Args->SleepTime;
-	S=STREAMSelect(Connections, &tv);
+	while (1)
+	{
+		gettimeofday(&TimeNow, NULL);
+		if (TimeNow.tv_sec > NextSync) 
+		{
+			if (GoDayTime(Args) == FATAL) break;
+	
+			//If we are told to broadcast the time using SNTP, do so. This happens here so that we broadcast
+			//the latest time we got from timeservers above, IF we got a time from a timeserver
+			//If we didn't get a time, we still run this command to broadcast the system time
+		if (Args->Flags & FLAG_BCAST_SEND) result=SNTPBroadcastNets(Args->BcastNets);
+	
+		NextSync=TimeNow.tv_sec + Args->SleepTime;
+		}
+		if (S && (S==SNTPD)) SNTPReceive(S);
+
+		if (! (Args->Flags & FLAG_DEMON)) break;
+		tv.tv_sec=Args->SleepTime;
+		S=STREAMSelect(Connections, &tv);
+	}
+
+	CurrTimeZone=CopyStr(CurrTimeZone,OldTimeZone);
+	SetTimeZone();
 }
-
-CurrTimeZone=CopyStr(CurrTimeZone,OldTimeZone);
-SetTimeZone();
 
 return(ExitVal);
 }

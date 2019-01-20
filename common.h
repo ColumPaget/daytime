@@ -1,10 +1,10 @@
 #ifndef DAYTIME_COMMON_H
 #define DAYTIME_COMMON_H
 
-#include <math.h>
 
 #define _XOPEN_SOURCE
 #include <time.h>
+#include <math.h>
 
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -14,7 +14,7 @@
 #include "libUseful-2.5/libUseful.h"
 
 
-#define VERSION "2.2"
+#define VERSION "2.3"
 
 #define FATAL -1
 
@@ -30,6 +30,7 @@
 #define FLAG_SNTPD 32
 #define FLAG_BCAST_RECV 64
 #define FLAG_BCAST_SEND 128
+#define FLAG_CMDLINE_TIME 256
 #define FLAG_BACKGROUND 2048
 #define FLAG_SETSYS 4096
 #define FLAG_SETRTC 8192
@@ -43,6 +44,7 @@ typedef struct
 {
 int Flags;
 char *Host;
+char *SetTime;
 int Port;
 int SleepTime;
 char *PidFilePath;

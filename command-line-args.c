@@ -12,6 +12,7 @@ return(Args);
 }
 
 
+
 void PrintServers()
 {
 printf("daytime,time		time.demon.co.uk\n");
@@ -61,6 +62,7 @@ fprintf(stdout,"\n");
 printf("Usage:	daytime -daytime|-time|-nist|-http|-sntp <server> [-s] [-r] [-tz <timezone>] [-P <path>]\n");
 printf("	daytime -sntp-bcast <broadcast net> [-sntp-version <version>]\n");
 printf("	daytime -sntpd [-sntp-stratum <stratum>] [-sntp-version <version>]\n");
+printf("	daytime -S [date or time specifier]\n");
 printf("	-daytime	Get time from daytime (RFC-867, port 13) server\n");
 printf("	-time		Get time from time (RFC-868, port 123) server\n");
 printf("	-nist		Get time from NIST daytime server\n");
@@ -75,6 +77,7 @@ printf("	-D		Daemon mode WITHOUT BACKGROUNDING.\n");
 printf("	-P		Pidfile path for daemon mode.\n");
 printf("	-t		Sleep time. Time between checks when in daemon mode, or between SNTP broadcasts (default 30 secs).\n");
 printf("	-s		Set clock to time we got from server (requires root permissions).\n");
+printf("	-S		Set clock from the command-line (requires root permissions).\n");
 printf("	-r		Set hardware RTC clock\n");
 printf("	-v		verbose output (mainly for SNTP mode)\n");
 printf("	-l		syslog significant events\n");
@@ -83,6 +86,24 @@ printf("	-servers	List of some servers to try\n");
 printf("	-?		This help\n\n");
 printf("If no server specified, http time from www.google.com will be tried first, then nist time time-a.nist.gov then ntp from pool.ntp.org.\n");
 printf("Servers can be specified as a host/port pair, like 'time.somewhere.com:8080'\n");
+printf("\nCommand-line set date/time.\n\n");
+printf("The '-S' switch allows setting a date or time from the command-line. This can be expressed in one of the following formats:\n\n");
+printf("  HH:MM                -  time expressed in hours and minutes, date will stay as current.\n");
+printf("  HH:MM:SS             -  time expressed in hours, minutes and seconds, date will stay as current.\n");
+printf("  YYYY/mm/dd           -  date expressed in year, month, day. Time will stay as current. \n");
+printf("  dd/mm/YYYY           -  date expressed in year, month, day. Time will stay as current. \n");
+printf("  YYYY/mm/dd HH:MM:SS  -  date and time. \n");
+printf("  dd/mm/YYYY HH:MM:SS  -  date and time. \n");
+printf("  HH:MM:SS YYYY/mm/dd  -  date and time. \n");
+printf("  HH:MM:SS dd/mm/YYYY  -  date and time. \n");
+printf("  YYYY-mm-ddTHH:MM:SS  -  date and time. \n");
+printf("  YYYY/mm/ddTHH:MM:SS  -  date and time. \n");
+printf("  Sun Jan 20 15:55:37 GMT 2019   -  standard output of the 'date' command\n");
+printf("  Sun Jan 20 15:55:37 2019       -  'date' style without zone\n");
+printf("  Jan 20 15:55:37 GMT 2019       -  'date' style without day\n");
+printf("  Jan 20 15:55:37 2019           -  'date' style without day and zone\n");
+printf("\nany character can be used as a separator in date, but time needs to use ':'\n");
+
 printf("\nSNTP Broadcasts and Daemon mode.\n\n");
 printf("Receiving the time as an SNTP broadcast requires having daytime stay running and wait for the message. To faciliate this a 'daemon mode' has been added. When -d or -D is used, daytime will stay running and do whatever it was told to do periodically. So:\n\n");
 printf("	daytime -t 600 -d -sntp-bcast 192.168.1.255 -sntp-bcast 192.168.2.255\n\n");
@@ -113,6 +134,12 @@ Args=TArgsCreate();
 for (i=1; i < argc; i++)
 {
 if (strcmp(argv[i],"-s")==0) Args->Flags |= FLAG_SETSYS;
+else if (strcmp(argv[i],"-S")==0) 
+{
+	Args->Flags |= FLAG_CMDLINE_TIME | FLAG_SETSYS;
+	i++;
+	for (; i < argc; i++) Args->SetTime=MCatStr(Args->SetTime, argv[i], " ", NULL);
+}
 else if (strcmp(argv[i],"-r")==0) Args->Flags |= FLAG_SETRTC;
 else if (strcmp(argv[i],"-d")==0) Args->Flags |= FLAG_DEMON | FLAG_BACKGROUND;
 else if (strcmp(argv[i],"-v")==0) Args->Flags |= FLAG_VERBOSE;
@@ -149,21 +176,19 @@ else if (strcmp(argv[i],"-version")==0) PrintVersion();
 else if (strcmp(argv[i],"--version")==0) PrintVersion();
 else if (strcmp(argv[i],"-?")==0) PrintUsage();
 else if (strcmp(argv[i],"-servers")==0) PrintServers();
+else if (strcasecmp(argv[i],"bcast")==0)
+{
+  Args->Flags &= ~FLAG_SNTP;
+  Args->Flags |= FLAG_BCAST_RECV;
+}
 else 
 {
-  if (strcasecmp(argv[i],"bcast")==0)
-  {
-    Args->Flags &= ~FLAG_SNTP;
-    Args->Flags |= FLAG_BCAST_RECV;
-  }
-	else 
-	{
 	Tempstr=MCopyStr(Tempstr, "tcp:",argv[i],NULL);
 	ParseURL(Tempstr, NULL, &Args->Host, &Token, NULL, NULL, NULL, NULL);
 
 	if (StrValid(Token)) Args->Port=atoi(Token);
-	}
 }
+
 }
 
 DestroyString(Tempstr);
