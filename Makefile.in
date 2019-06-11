@@ -30,3 +30,6 @@ clean:
 install:
 	$(INSTALL) daytime $(bindir)
 	$(INSTALL) daytime.1 $(mandir)
+
+test:
+	-echo "no tests"
