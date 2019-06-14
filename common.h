@@ -14,7 +14,7 @@
 #include "libUseful/libUseful.h"
 
 
-#define VERSION "2.3"
+#define VERSION "3.0"
 
 #define FATAL -1
 
