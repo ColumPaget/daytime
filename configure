@@ -689,7 +689,7 @@ LDFLAGS
 LIBS
 CPPFLAGS
 CPP'
-ac_subdirs_all='libUseful-2.5'
+ac_subdirs_all='libUseful'
 
 # Initialize some variables set by options.
 ac_init_help=
@@ -3554,7 +3554,7 @@ fi
 
 
 
-subdirs="$subdirs libUseful-2.5"
+subdirs="$subdirs libUseful"
 
 
 # On IRIX 5.3, sys/types and inttypes.h are conflicting.

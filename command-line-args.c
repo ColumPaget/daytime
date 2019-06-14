@@ -191,8 +191,8 @@ else
 
 }
 
-DestroyString(Tempstr);
-DestroyString(Token);
+Destroy(Tempstr);
+Destroy(Token);
 
 return(Args);
 }

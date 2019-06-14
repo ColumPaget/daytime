@@ -1,4 +1,5 @@
 #include "common.h"
+#include "sysclock.h"
 
 char *OldTimeZone=NULL, *CurrTimeZone=NULL;
 struct timeval TimeNow;
@@ -34,9 +35,9 @@ STREAM *BindPort(const char *URL, int DefaultPort)
 		S=STREAMFromFD(fd);
 	}
 
-	DestroyString(Proto);
-	DestroyString(Host);
-	DestroyString(Token);
+	Destroy(Proto);
+	Destroy(Host);
+	Destroy(Token);
 	return(S);
 }
 
@@ -74,14 +75,14 @@ if (*ptr==':') ptr++;
 Tempstr=FormatStr(Tempstr, "%d", val);
 if (! AuthKeys) AuthKeys=ListCreate();
 SetVar(AuthKeys, Tempstr, ptr);
-DestroyString(Tempstr);
+Destroy(Tempstr);
 }
 
-char *AuthKeyGet(int Index)
+const char *AuthKeyGet(int Index)
 {
 char *Tempstr=NULL;
 ListNode *Node;
-char *ptr;
+const char *ptr;
 
 if (Index < 1) return(NULL);
 if (Index==0)
@@ -96,7 +97,7 @@ else
 	ptr=GetVar(AuthKeys, Tempstr);
 }
 
-DestroyString(Tempstr);
+Destroy(Tempstr);
 return(ptr);
 }
 
@@ -106,8 +107,10 @@ void HandleReceivedTime(struct timeval *Time)
 char *Tempstr=NULL;
 int64_t milli;
 struct tm *TM;
+time_t secs;
 
-TM=localtime(Time);
+secs=Time->tv_sec;
+TM=localtime(&secs);
 Tempstr=CopyStr(Tempstr, asctime(TM));
 StripTrailingWhitespace(Tempstr);
 printf("%s\n",Tempstr);
@@ -124,5 +127,5 @@ if (Args->Flags & FLAG_SETRTC)
 }
 
 
-DestroyString(Tempstr);
+Destroy(Tempstr);
 }

@@ -11,7 +11,7 @@
 
 #include <syslog.h>
 #include <errno.h>
-#include "libUseful-2.5/libUseful.h"
+#include "libUseful/libUseful.h"
 
 
 #define VERSION "2.3"
@@ -63,7 +63,7 @@ long diff_millisecs(struct timeval *t1, struct timeval *t2);
 int64_t ConvertFloatTimeToMillisecs(double FloatTime);
 
 void AuthKeySet(const char *KeyInfo);
-char *AuthKeyGet(int Index);
+const char *AuthKeyGet(int Index);
 void HandleReceivedTime(struct timeval *Time);
 
 #endif

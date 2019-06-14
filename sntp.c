@@ -62,8 +62,9 @@ int64_t diff;
 
 int SNTPHashPacket(SNTPPacket *Packet, int KeyIndex, char **HashStr)
 {
-char *ptr, *Token=NULL;
-THash *Hash;
+char *Token=NULL;
+const char *ptr;
+HASH *Hash;
 int len;
 
 ptr=AuthKeyGet(KeyIndex);
@@ -74,14 +75,14 @@ Packet->HashID=1;
 Hash=HashInit(Token);
 if (! Hash)
 {
-	DestroyString(Token);
+	Destroy(Token);
 	return(0);
 }
 
 Hash->Update(Hash, ptr, StrLen(ptr));
 Hash->Update(Hash, (char *) Packet, PKT_LEN);
-len=Hash->Finish(Hash, 0, HashStr);
-DestroyString(Token);
+len=Hash->Finish(Hash, HashStr);
+Destroy(Token);
 return(len);
 }
 
@@ -96,7 +97,7 @@ len=SNTPHashPacket(Packet, 1, &Token);
 memcpy(Packet->Hash, Token, len);
 len+=PKT_LEN + sizeof(uint32_t);
 
-DestroyString(Token);
+Destroy(Token);
 return(len);
 }
 
@@ -108,7 +109,7 @@ char *Token=NULL;
 len=SNTPHashPacket(Packet, 1, &Token);
 if (memcmp(Token, Packet->Hash, len)==0) result=TRUE;
 
-DestroyString(Token);
+Destroy(Token);
 return(result);
 }
 
@@ -117,9 +118,16 @@ return(result);
 SNTPPacket *SNTPReadPacket(STREAM *S, char **Addr, int *Port)
 {
 SNTPPacket *Packet=NULL;
+struct timeval tv;
 int len;
 
-if ((S->Timeout) && (FDSelectCentisecs(S->in_fd, SELECT_READ, S->Timeout) < 1)) return(NULL);
+if (S->Timeout) 
+{
+	tv.tv_sec=S->Timeout / 100;
+	tv.tv_usec=(S->Timeout - (tv.tv_sec * 100)) *10000;
+	if (FDSelect(S->in_fd, SELECT_READ, &tv) < 1) return(NULL);
+}
+
 Packet=(SNTPPacket *) calloc(1,sizeof(SNTPPacket));
 len=UDPRecv(S->in_fd,  (char *) Packet, PKT_LEN, Addr, Port);
 if (len < PKT_LEN)
@@ -171,7 +179,8 @@ Packet->TransmitFraction=htonl(fract);
 
 void SNTPSetupBcast(TArgs *Args, const char *Data)
 {
-char *Token=NULL, *ptr;
+char *Token=NULL;
+const char *ptr;
 
 Args->Flags |= FLAG_BCAST_SEND;
 
@@ -182,7 +191,7 @@ while (ptr)
 	ptr=GetToken(ptr,",",&Token,0);
 }
 
-DestroyString(Token);
+Destroy(Token);
 }
 
 
@@ -227,8 +236,8 @@ int val;
 	}
 	}
 
-	ListDestroy(List, DestroyString);
-	DestroyString(Src);
+	ListDestroy(List, Destroy);
+	Destroy(Src);
 	return(Packet);
 }
 
@@ -288,7 +297,7 @@ if (Packet)
 else if (Args->Flags & FLAG_VERBOSE) printf("No NTP response from %s\n",Host);
 
 free(Packet);
-DestroyString(Tempstr);
+Destroy(Tempstr);
 
 return(result);
 }
@@ -339,8 +348,8 @@ while (Curr)
 Curr=ListGetNext(Curr);
 }
 
-DestroyString(Net);
-DestroyString(Tempstr);
+Destroy(Net);
+Destroy(Tempstr);
 
 return(result);
 }
@@ -385,5 +394,5 @@ if ((Args->Flags & FLAG_BCAST_RECV) && (Packet->Mode==SNTP_BCAST))
 }
 
 free(Packet);
-DestroyString(Addr);
+Destroy(Addr);
 }

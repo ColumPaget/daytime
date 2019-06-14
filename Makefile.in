@@ -9,8 +9,8 @@ mandir=@mandir@/man1
 OBJ=common.o sysclock.o sntp.o command-line-args.o
 
 all: $(OBJ)
-	@cd libUseful-2.5; $(MAKE)
-	$(CC) $(FLAGS) $(LIBS) -g -odaytime $(OBJ) main.c libUseful-2.5/libUseful-2.5.a
+	@cd libUseful; $(MAKE)
+	$(CC) $(FLAGS) $(LIBS) -g -odaytime $(OBJ) main.c libUseful/libUseful.a
 
 common.o: common.h common.c
 	$(CC) $(FLAGS) -c common.c
@@ -25,7 +25,7 @@ sntp.o: sntp.c sntp.h common.h
 	$(CC) $(FLAGS) -c sntp.c
 
 clean:
-	@rm -f daytime *.o libUseful-2.5/*.o libUseful-2.5/*.a libUseful-2.5/*.so config.cache config.status config.log */config.cache */config.status */config.log
+	@rm -f daytime *.o libUseful/*.o libUseful/*.a libUseful/*.so config.cache config.status config.log */config.cache */config.status */config.log
 
 install:
 	$(INSTALL) daytime $(bindir)

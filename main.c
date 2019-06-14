@@ -52,8 +52,8 @@ printf("Failed To Connect to Daytime Host %s\n",HostName);
 result=FALSE;
 }
 
-DestroyString(Tempstr);
-DestroyString(Line);
+Destroy(Tempstr);
+Destroy(Line);
 
 return(result);
 }
@@ -104,8 +104,8 @@ printf("Failed To Connect to NIST Host %s\n",HostName);
 result=FALSE;
 }
 
-DestroyString(Tempstr);
-DestroyString(Line);
+Destroy(Tempstr);
+Destroy(Line);
 
 return(result);
 }
@@ -147,7 +147,7 @@ else
 }
 STREAMClose(S);
 
-DestroyString(Tempstr);
+Destroy(Tempstr);
 return(result);
 }
 
@@ -200,9 +200,9 @@ while (Line)
 }
 
 }
-DestroyString(Tempstr);
-DestroyString(Token);
-DestroyString(Line);
+Destroy(Tempstr);
+Destroy(Token);
+Destroy(Line);
 return(result);
 }
 
@@ -346,9 +346,9 @@ tv.tv_usec=0;
 HandleReceivedTime(&tv);
 
 
-DestroyString(Tempstr);
-DestroyString(Date);
-DestroyString(Time);
+Destroy(Tempstr);
+Destroy(Date);
+Destroy(Time);
 }
 
 
