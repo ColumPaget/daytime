@@ -423,6 +423,7 @@ void HTTPInfoSetURL(HTTPInfoStruct *Info, const char *Method, const char *iURL)
             Info->Credentials=CopyStr(Info->Credentials, Value);
         }
         else if (strcasecmp(Token, "hostauth")==0) Info->AuthFlags |= HTTP_AUTH_HOST;
+        else if (strcasecmp(Token, "http1.0")==0) Info->Flags |= HTTP_VER1_0;
         else if (strcasecmp(Token, "content-type")==0)   Info->PostContentType=CopyStr(Info->PostContentType, Value);
         else if (strcasecmp(Token, "content-length")==0) Info->PostContentLength=atoi(Value);
         else if (strcasecmp(Token, "user")==0) Info->UserName=CopyStr(Info->UserName, Value);
@@ -712,24 +713,6 @@ char *HTTPDigest(char *RetStr, const char *Method, const char *Logon, const char
     Tempstr=FormatStr(Tempstr,"%s:%s",Method,Doc);
     len2=HashBytes(&HA2,"md5",Tempstr,StrLen(Tempstr),ENCODE_HEX);
 
-    /*
-    	Tempstr=SetStrLen(len1+len2+StrLen(Nonce)+20);
-    	ptr=Tempstr;
-    	memcpy(ptr,HA1,len1);
-    	ptr+=len1;
-    	*ptr=':';
-    	ptr++;
-
-    	len1=StrLen(Nonce);
-    	memcpy(ptr,Nonce,len1);
-    	ptr+=len1;
-    	*ptr=':';
-    	ptr++;
-
-    	memcpy(ptr,HA2,len2);
-    	ptr+=len2;
-    */
-
     Tempstr=MCopyStr(Tempstr,HA1,":",Nonce,":",HA2,NULL);
     len2=HashBytes(&Digest,"md5",Tempstr,StrLen(Tempstr),ENCODE_HEX);
     RetStr=MCopyStr(RetStr, "username=\"",Logon,"\", realm=\"",Realm,"\", nonce=\"",Nonce,"\", response=\"",Digest,"\", ","uri=\"",Doc,"\", algorithm=\"MD5\"", NULL);
@@ -751,6 +734,7 @@ char *HTTPDigest(char *RetStr, const char *Method, const char *Logon, const char
     DestroyString(HA1);
     DestroyString(HA2);
     DestroyString(Digest);
+    DestroyString(ClientNonce);
 
     return(RetStr);
 }
@@ -1089,9 +1073,9 @@ STREAM *HTTPSetupConnection(HTTPInfoStruct *Info, int ForceHTTPS)
     int Port=0, Flags=0;
     STREAM *S;
 
-    Proto=CopyStr(Proto,"tcp");
 
-    S=STREAMCreate();
+		//proto in here will not be http/https but tcp/ssl/tls
+    Proto=CopyStr(Proto,"tcp");
     if (Info->Flags & HTTP_PROXY)
     {
         ParseURL(Info->Proxy, &Proto, &Host, &Tempstr, NULL, NULL, NULL,NULL);
@@ -1116,7 +1100,8 @@ STREAM *HTTPSetupConnection(HTTPInfoStruct *Info, int ForceHTTPS)
     if (StrValid(Info->ConnectionChain)) Tempstr=FormatStr(Tempstr,"%s|%s:%s:%d/",Info->ConnectionChain,Proto,Host,Port);
     else Tempstr=FormatStr(Tempstr,"%s:%s:%d/",Proto,Host,Port);
 
-    if (STREAMConnect(S,Tempstr,""))
+		S=STREAMOpen(Tempstr, "");
+    if (S)
     {
         S->Type=STREAM_TYPE_HTTP;
         HTTPSendHeaders(S,Info);
@@ -1304,11 +1289,14 @@ STREAM *HTTPWithConfig(const char *URL, const char *Config)
     {
         for (cptr=Token; *cptr !='\0'; cptr++)
         {
-            if (*cptr=='w') p_Method="POST";
-            else if (*cptr=='W') p_Method="PUT";
-            else if (*cptr=='P') p_Method="PATCH";
-            else if (*cptr=='D') p_Method="DELETE";
-            else if (*cptr=='H') p_Method="HEAD";
+						switch(*cptr)
+						{
+            case 'w': p_Method="POST"; break;
+            case 'W': p_Method="PUT"; break;
+            case 'P': p_Method="PATCH"; break;
+            case 'D': p_Method="DELETE"; break;
+            case 'H': p_Method="HEAD"; break;
+						}
         }
     }
 

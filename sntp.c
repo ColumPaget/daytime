@@ -341,6 +341,7 @@ Curr=ListGetNext(Nets);
 while (Curr)
 {
 	ParseURL((char *) Curr->Item, NULL, &Net, &Tempstr, NULL, NULL, NULL, NULL);
+
 	if (Tempstr) Port=atoi(Tempstr);
 	if (Port==0) Port=123;
 	result=SNTPBroadcast(Net, Port);
