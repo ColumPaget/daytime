@@ -1,4 +1,5 @@
 #include "command-line-args.h"
+#include "sntp.h"
 
 TArgs *TArgsCreate()
 {
@@ -90,6 +91,8 @@ printf("\nCommand-line set date/time.\n\n");
 printf("The '-S' switch allows setting a date or time from the command-line. This can be expressed in one of the following formats:\n\n");
 printf("  HH:MM                -  time expressed in hours and minutes, date will stay as current.\n");
 printf("  HH:MM:SS             -  time expressed in hours, minutes and seconds, date will stay as current.\n");
+printf("  HH.MM                -  time expressed in hours and minutes, date will stay as current.\n");
+printf("  HH.MM.SS             -  time expressed in hours, minutes and seconds, date will stay as current.\n");
 printf("  YYYY/mm/dd           -  date expressed in year, month, day. Time will stay as current. \n");
 printf("  dd/mm/YYYY           -  date expressed in year, month, day. Time will stay as current. \n");
 printf("  YYYY/mm/dd HH:MM:SS  -  date and time. \n");
@@ -98,11 +101,16 @@ printf("  HH:MM:SS YYYY/mm/dd  -  date and time. \n");
 printf("  HH:MM:SS dd/mm/YYYY  -  date and time. \n");
 printf("  YYYY-mm-ddTHH:MM:SS  -  date and time. \n");
 printf("  YYYY/mm/ddTHH:MM:SS  -  date and time. \n");
-printf("  Sun Jan 20 15:55:37 GMT 2019   -  standard output of the 'date' command\n");
+printf("  YYYY/mm/dd HH.MM.SS  -  date and time. \n");
+printf("  dd/mm/YYYY HH.MM.SS  -  date and time. \n");
+printf("  HH.MM.SS YYYY/mm/dd  -  date and time. \n");
+printf("  HH.MM.SS dd/mm/YYYY  -  date and time. \n");
+printf("  YYYY-mm-ddTHH.MM.SS  -  date and time. \n");
+printf("  YYYY/mm/ddTHH.MM.SS  -  date and time. \n");
 printf("  Sun Jan 20 15:55:37 2019       -  'date' style without zone\n");
 printf("  Jan 20 15:55:37 GMT 2019       -  'date' style without day\n");
 printf("  Jan 20 15:55:37 2019           -  'date' style without day and zone\n");
-printf("\nany character can be used as a separator in date, but time needs to use ':'\n");
+printf("\nany character *except ':' and '.' can be used as a separator in date, but time needs to use ':' or '.'\n");
 
 printf("\nSNTP Broadcasts and Daemon mode.\n\n");
 printf("Receiving the time as an SNTP broadcast requires having daytime stay running and wait for the message. To faciliate this a 'daemon mode' has been added. When -d or -D is used, daytime will stay running and do whatever it was told to do periodically. So:\n\n");

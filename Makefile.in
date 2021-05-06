@@ -15,10 +15,10 @@ all: $(OBJ)
 common.o: common.h common.c
 	$(CC) $(FLAGS) -c common.c
 
-sysclock.o: sysclock.h sysclock.c
+sysclock.o: sysclock.h sysclock.c common.h
 	$(CC) $(FLAGS) -c sysclock.c
 
-command-line-args.o: command-line-args.h command-line-args.c
+command-line-args.o: command-line-args.h command-line-args.c common.h
 	$(CC) $(FLAGS) -c command-line-args.c
 
 sntp.o: sntp.c sntp.h common.h

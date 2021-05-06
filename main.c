@@ -10,7 +10,7 @@ void SetTimeZone()
 if (! StrLen(CurrTimeZone)) CurrTimeZone=CopyStr(CurrTimeZone,"");
 StripLeadingWhitespace(CurrTimeZone);
 StripTrailingWhitespace(CurrTimeZone);
-setenv("TZ",CurrTimeZone,TRUE);
+xsetenv("TZ",CurrTimeZone);
 }
 
 
@@ -61,7 +61,8 @@ return(result);
 
 int GetTimeFromNISTHost(char *HostName, int port, struct timeval *Time)
 {
-char *Tempstr=NULL, *Line=NULL, *ptr;
+char *Tempstr=NULL, *Line=NULL;
+const char *ptr;
 int count, result;
 struct tm TM;
 STREAM *S;
@@ -155,7 +156,8 @@ return(result);
 
 int GetTimeFromHTTPHost(char *HostName, int port, struct timeval *Time)
 {
-char *Tempstr=NULL, *Line=NULL, *Token=NULL, *ptr, *tzptr;
+char *Tempstr=NULL, *Line=NULL, *Token=NULL;
+const char *ptr, *tzptr;
 int result=FALSE;
 struct tm TM;
 STREAM *S;
@@ -176,8 +178,7 @@ while (Line)
 
   if (strcmp(Token,"Date")==0)
   {
-	StripLeadingWhitespace(ptr);
-
+	while (isspace(*ptr)) ptr++;
 	if (StrLen(CurrTimeZone)==0)
 	{
 	   tzptr=strrchr(ptr,' ');
@@ -273,7 +274,7 @@ return(result);
 
 void SetTimeFromCommandLine(TArgs *Args)
 {
-char *Date=NULL, *Time=NULL, *Tempstr=NULL, *wptr;
+char *Date=NULL, *Time=NULL, *Tempstr=NULL, *Token=NULL, *wptr;
 const char *DateFormats[]={"%a %b %d %H:%M:%S %Z %Y", "%a %b %d %H:%M:%S %Y", "%b %d %H:%M:%S %Z %Y", "%b %d %H:%M:%S %Y", NULL};
 struct tm TM;
 struct timeval tv;
@@ -286,52 +287,68 @@ if (! isdigit(*Args->SetTime))
 	tv.tv_usec=0;
 	for (i=0; DateFormats[i] != NULL; i++)
 	{
-		if (strptime(Args->SetTime, DateFormats[i], &TM) != -1) break;
+		if (strptime(Args->SetTime, DateFormats[i], &TM) != NULL) break;
 	}
 }
 else
 {
 	//if SetTime contains a 'T' followed by a digit then we have
 	//the format 1990/10/18T11:10:00
-	wptr=strchr(Args->SetTime, 'T');
-	if (wptr && isdigit(*(wptr+1))) *wptr=' ';
-	
-	
-	ptr=GetToken(Args->SetTime, " ", &Date, 0);
-	ptr=GetToken(ptr, " ", &Time, 0);
-	if (strchr(Date, ':')) 
+	ptr=GetToken(Args->SetTime, "\\S|T", &Date, GETTOKEN_MULTI_SEP);
+	ptr=GetToken(ptr, "\\S", &Time, 0);
+
+	//if there's a ':' or a '.' in date, then presume date and time are reversed!
+	if (strchr(Date, ':') || strchr(Date, '.')) 
 	{
 		Tempstr=CopyStr(Tempstr, Time);
 		Time=CopyStr(Time, Date);
 		Date=CopyStr(Date, Tempstr);
 	}
 	
+	strrep(Time, '.', ':');
+	//no time? We only have a date, so add curr time on the end
 	if (StrLen(Time)==0) Time=CopyStr(Time, GetDateStr("%H:%M:%S",NULL));
+	//no seconds?
 	else if (StrLen(Time)==5) Time=CatStr(Time, ":00");
 	
+	//no date? Create one from today's date
 	if (StrLen(Date)==0) Date=CopyStr(Date, GetDateStr("%Y/%m/%d", NULL));
 	else
 	{
-		ptr=strrchr(Date, '/');
-		//we have a 4-digit year at the end of the date
-		if (StrLen(ptr) == 5)
+		//we must have a 4-digit year somewhere in date
+		if (StrLen(Date)==10)
 		{
-			Tempstr=MCopyStr(Tempstr, ptr+1, "/", NULL);
+		ptr=GetToken(Date, "/|-|_|.", &Token, GETTOKEN_MULTI_SEP);
+		//we have a 4-digit year at the start of the date
+		if (StrLen(Token)==4)
+		{
+			Tempstr=MCopyStr(Tempstr, Token, "/", NULL);
+			ptr=GetToken(ptr, "/|-|_|.", &Token, GETTOKEN_MULTI_SEP);
+			Tempstr=MCatStr(Tempstr, Token, "/", NULL);
+			ptr=GetToken(ptr, "/|-|_|.", &Token, GETTOKEN_MULTI_SEP);
+			Tempstr=CatStr(Tempstr, Token);
+		}
+		//we must have a 4-digit year at the end of the date
+		else
+		{
+			Tempstr=CopyStrLen(Tempstr, Date+6, 4);
+			Tempstr=CatStr(Tempstr, "/");
 			Tempstr=CatStrLen(Tempstr, Date+3, 2);
 			Tempstr=CatStr(Tempstr, "/");
 			Tempstr=CatStrLen(Tempstr, Date, 2);
-			Date=CopyStr(Date, Tempstr);
 		}
-		else 
+		}
+		else
 		{
-			Tempstr=CopyStrLen(Tempstr, Date, 2);
-			Tempstr=CatStr(Tempstr, "/");
-			Tempstr=CatStrLen(Tempstr, Date+3, 2);
-			Tempstr=CatStr(Tempstr, "/");
-			Tempstr=CatStr(Tempstr, Date+6);
-			Date=CopyStr(Date, Tempstr);
+		ptr=GetToken(Date, "/|-|_|.", &Token, GETTOKEN_MULTI_SEP);
+		Tempstr=MCopyStr(Tempstr, Token, "/", NULL);
+		ptr=GetToken(Date, "/|-|_|.", &Token, GETTOKEN_MULTI_SEP);
+		Tempstr=MCatStr(Tempstr, Token, "/", NULL);
+		ptr=GetToken(Date, "/|-|_|.", &Token, GETTOKEN_MULTI_SEP);
+		Tempstr=CatStr(Tempstr, Token);
 		}
-	
+
+		Date=CopyStr(Date, Tempstr);
 	}
 
 	Tempstr=MCopyStr(Tempstr, Date, " ", Time, NULL);
@@ -347,6 +364,7 @@ HandleReceivedTime(&tv);
 
 
 Destroy(Tempstr);
+Destroy(Token);
 Destroy(Date);
 Destroy(Time);
 }
@@ -361,6 +379,8 @@ struct timeval tv;
 time_t NextSync=0;
 int result, ExitVal=0;
 
+//just to make sure we always have this
+gettimeofday(&TimeNow, NULL);
 LastError=SetStrLen(LastError, 255);
 Connections=ListCreate();
 ptr=getenv("TZ");

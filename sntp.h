@@ -1,5 +1,5 @@
-#ifndef DAYTIME_SNTP
-#define DAYTIME_SNTP
+#ifndef DAYTIME_SNTP_H
+#define DAYTIME_SNTP_H
 
 #include "common.h"
 

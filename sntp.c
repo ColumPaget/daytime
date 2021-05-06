@@ -32,7 +32,10 @@ char Hash[64];
 char Padding[100];
 } SNTPPacket;
 
-double SNTPConvertTime(uint32_t *ptr)
+
+
+
+static double SNTPConvertTime(uint32_t *ptr)
 {
 double val;
 
@@ -46,7 +49,7 @@ val += ((float) ntohl(*ptr)) / TWO_TO_32;
 return(val);
 }
 
-void SNTPToTimeval(double millisecs, struct timeval *Time)
+static void SNTPToTimeval(double millisecs, struct timeval *Time)
 {
 double fractpart, intpart;
 int64_t diff;
@@ -60,7 +63,7 @@ int64_t diff;
 }
 
 
-int SNTPHashPacket(SNTPPacket *Packet, int KeyIndex, char **HashStr)
+static int SNTPHashPacket(SNTPPacket *Packet, int KeyIndex, char **HashStr)
 {
 char *Token=NULL;
 const char *ptr;
@@ -88,7 +91,7 @@ return(len);
 
 
 
-int SNTPSignMessage(SNTPPacket *Packet)
+static int SNTPSignMessage(SNTPPacket *Packet)
 {
 char *ptr, *Token=NULL;
 int len;
@@ -101,7 +104,7 @@ Destroy(Token);
 return(len);
 }
 
-int SNTPAuthenticateMessage(SNTPPacket *Packet)
+static int SNTPAuthenticateMessage(SNTPPacket *Packet)
 {
 int len, result=FALSE;
 char *Token=NULL;
@@ -141,7 +144,7 @@ return(Packet);
 
 
 
-void SNTPSetupPacket(SNTPPacket *Packet, const char *RefIdent, int Mode, int Poll, int Stratum)
+static void SNTPSetupPacket(SNTPPacket *Packet, const char *RefIdent, int Mode, int Poll, int Stratum)
 {
 uint32_t secs, fract;
 
@@ -368,7 +371,7 @@ if (Packet->Mode==SNTP_CLIENT)
 	if (Args->Flags & FLAG_VERBOSE) printf("SNTP Request from %s. ClockDifference: %ld secs %ld ms\n", Addr, (long) millis / 1000,(long) millis % 1000);
 	if (Args->Flags & FLAG_SYSLOG) syslog(LOG_INFO, "SNTP Request from %s. ClockDifference: %ld secs %ld ms\n", Addr, (long) millis / 1000, (long) millis % 1000);
 
-	STREAMSendDgram(S, Addr, Port, Packet, PKT_LEN);
+	STREAMSendDgram(S, Addr, Port, (char *) Packet, PKT_LEN);
 }
 }
 

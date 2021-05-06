@@ -14,9 +14,6 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 
-//this function is in Stream.c but we do not want to declare it in Stream.h and expose it to the user, so it's prototyped here
-int STREAMReadThroughProcessors(STREAM *S, char *Bytes, int InLen);
-
 typedef struct
 {
     char *Key;
@@ -29,6 +26,12 @@ typedef struct
     EVP_CIPHER_CTX *dec_ctx;
 } libCryptoProcessorData;
 #endif
+
+
+
+
+//this function is in Stream.c but we do not want to declare it in Stream.h and expose it to the user, so it's prototyped here
+extern int STREAMReadThroughProcessors(STREAM *S, char *Bytes, int InLen);
 
 
 void DataProcessorDestroy(void *In)
@@ -89,7 +92,7 @@ void DataProcessorUpdateBuffer(char **Buffer, int *Used, int *Size, const char *
 //otherwise just expand it if needed
     if (Data)
     {
-        memcpy((*Buffer) + (*Used) ,Data,DataLen);
+        memcpy((*Buffer) + (*Used),Data,DataLen);
         *Used=len;
     }
 }
@@ -423,8 +426,8 @@ int libCryptoProcessorInit(TProcessingModule *ProcMod, const char *Args)
 
     if (Data->Cipher)
     {
-        Data->enc_ctx=(EVP_CIPHER_CTX *) calloc(1,sizeof(EVP_CIPHER_CTX));
-        Data->dec_ctx=(EVP_CIPHER_CTX *) calloc(1,sizeof(EVP_CIPHER_CTX));
+        Data->enc_ctx=EVP_CIPHER_CTX_new();
+        Data->dec_ctx=EVP_CIPHER_CTX_new();
         EVP_CIPHER_CTX_init(Data->enc_ctx);
         EVP_CIPHER_CTX_init(Data->dec_ctx);
         Data->BlockSize=EVP_CIPHER_block_size(Data->Cipher);
@@ -646,7 +649,7 @@ TProcessingModule *StandardDataProcessorCreate(const char *Class, const char *Na
         {
 #ifdef HAVE_LIBZ
             Mod->Init=zlibProcessorInit;
-						Mod->Flags |= DPM_COMPRESS;
+            Mod->Flags |= DPM_COMPRESS;
 #endif
         }
         else if (
@@ -657,7 +660,7 @@ TProcessingModule *StandardDataProcessorCreate(const char *Class, const char *Na
 #ifdef HAVE_LIBZ
             Mod->Init=zlibProcessorInit;
             Args=MCopyStr(Args,"Alg=gzip ",iArgs,NULL);
-						Mod->Flags |= DPM_COMPRESS;
+            Mod->Flags |= DPM_COMPRESS;
 #endif
         }
         else if (
@@ -669,7 +672,7 @@ TProcessingModule *StandardDataProcessorCreate(const char *Class, const char *Na
             Mod->Init=PipeCommandProcessorInit;
             Mod->Write=PipeCommandProcessorWrite;
             Mod->Close=PipeCommandProcessorClose;
-						Mod->Flags |= DPM_COMPRESS;
+            Mod->Flags |= DPM_COMPRESS;
         }
         else if (strcasecmp(Name,"xz")==0)
         {
@@ -677,7 +680,7 @@ TProcessingModule *StandardDataProcessorCreate(const char *Class, const char *Na
             Mod->Init=PipeCommandProcessorInit;
             Mod->Write=PipeCommandProcessorWrite;
             Mod->Close=PipeCommandProcessorClose;
-						Mod->Flags |= DPM_COMPRESS;
+            Mod->Flags |= DPM_COMPRESS;
         }
 
     }
@@ -696,7 +699,7 @@ TProcessingModule *StandardDataProcessorCreate(const char *Class, const char *Na
         {
 #ifdef HAVE_LIBZ
             Mod->Init=zlibProcessorInit;
-						Mod->Flags |= DPM_COMPRESS;
+            Mod->Flags |= DPM_COMPRESS;
 #endif
         }
         else if (strcasecmp(Name,"gzip")==0)
@@ -704,7 +707,7 @@ TProcessingModule *StandardDataProcessorCreate(const char *Class, const char *Na
 #ifdef HAVE_LIBZ
             Mod->Init=zlibProcessorInit;
             Args=MCopyStr(Args,"Alg=gzip ",iArgs,NULL);
-						Mod->Flags |= DPM_COMPRESS;
+            Mod->Flags |= DPM_COMPRESS;
 #endif
         }
         else if (strcasecmp(Name,"bzip2")==0)
@@ -713,7 +716,7 @@ TProcessingModule *StandardDataProcessorCreate(const char *Class, const char *Na
             Mod->Init=PipeCommandProcessorInit;
             Mod->Read=PipeCommandProcessorWrite;
             Mod->Close=PipeCommandProcessorClose;
-						Mod->Flags |= DPM_COMPRESS;
+            Mod->Flags |= DPM_COMPRESS;
         }
         else if (strcasecmp(Name,"xz")==0)
         {
@@ -721,7 +724,7 @@ TProcessingModule *StandardDataProcessorCreate(const char *Class, const char *Na
             Mod->Init=PipeCommandProcessorInit;
             Mod->Read=PipeCommandProcessorWrite;
             Mod->Close=PipeCommandProcessorClose;
-						Mod->Flags |= DPM_COMPRESS;
+            Mod->Flags |= DPM_COMPRESS;
         }
 
     }
@@ -824,7 +827,7 @@ int STREAMAddStandardDataProcessor(STREAM *S, const char *Class, const char *Nam
     if (Mod)
     {
         STREAMAddDataProcessor(S, Mod, Args);
-				if (Mod->Flags & DPM_COMPRESS) S->State |= SS_COMPRESSED;
+        if (Mod->Flags & DPM_COMPRESS) S->State |= SS_COMPRESSED;
         return(TRUE);
     }
 

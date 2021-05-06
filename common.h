@@ -2,8 +2,10 @@
 #define DAYTIME_COMMON_H
 
 
+#define _DEFAULT_SOURCE
 #define _XOPEN_SOURCE
 #include <time.h>
+#include <sys/time.h> //for settimeofday
 #include <math.h>
 
 #include <sys/ioctl.h>
@@ -14,7 +16,7 @@
 #include "libUseful/libUseful.h"
 
 
-#define VERSION "3.0"
+#define VERSION "3.1"
 
 #define FATAL -1
 

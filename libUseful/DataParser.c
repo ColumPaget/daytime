@@ -5,7 +5,6 @@
 const char *ParserParseItems(int ParserType, const char *Doc, ListNode *Parent, int IndentLevel);
 
 
-
 void ParserItemsDestroy(ListNode *Items)
 {
     ListNode *Curr;
@@ -47,6 +46,17 @@ const char *ParserAddNewStructure(const char *Data, int ParserType, ListNode *Pa
 }
 
 
+void ParserAddValue(ListNode *Parent, const char *Name, const char *Value)
+{
+    ListNode *Node;
+
+    if (StrValid(Name) || StrValid(Value))
+    {
+        Node=ListAddNamedItem(Parent, Name, CopyStr(NULL, Value));
+        Node->ItemType=ITEM_VALUE;
+    }
+}
+
 #define JSON_TOKENS ",|[|]|{|}|:|\r|\n"
 static const char *ParserJSONItems(int ParserType, const char *Doc, ListNode *Parent, int IndentLevel)
 {
@@ -62,26 +72,26 @@ static const char *ParserJSONItems(int ParserType, const char *Doc, ListNode *Pa
         {
         case '[':
             ptr=ParserAddNewStructure(ptr, ParserType, Parent, ITEM_ARRAY, Name, IndentLevel+1);
-						Name=CopyStr(Name,"");
+            Name=CopyStr(Name,"");
             break;
 
         case ']':
+            //we can have an item right before a ']' that doesn't terminate with a ',' because the ']' terminates it
+            ParserAddValue(Parent, Name, PrevToken);
+
             if (ptr && (*ptr==',')) ptr++;
             BreakOut=TRUE;
             break;
 
         case '{':
             ptr=ParserAddNewStructure(ptr, ParserType, Parent, ITEM_ENTITY, Name, IndentLevel+1);
-						Name=CopyStr(Name,"");
+            Name=CopyStr(Name,"");
             break;
 
         case '}':
-            //we can have an item right before a '}' that doesn't terminate with a ',' becasue the '}' terminates it
-            if (StrValid(Name) && StrValid(PrevToken))
-            {
-                Node=ListAddNamedItem(Parent, Name, CopyStr(NULL, PrevToken));
-                Node->ItemType=ITEM_VALUE;
-            }
+            //we can have an item right before a '}' that doesn't terminate with a ',' because the '}' terminates it
+            ParserAddValue(Parent, Name, PrevToken);
+
             if (ptr && (*ptr==',')) ptr++;
             BreakOut=TRUE;
             break;
@@ -96,8 +106,7 @@ static const char *ParserJSONItems(int ParserType, const char *Doc, ListNode *Pa
 
         case '\n':
         case ',':
-            Node=ListAddNamedItem(Parent, Name, CopyStr(NULL, PrevToken));
-            Node->ItemType=ITEM_VALUE;
+            ParserAddValue(Parent, Name, PrevToken);
             break;
 
         default:
@@ -148,8 +157,7 @@ static const char *ParserYAMLItems(int ParserType, const char *Doc, ListNode *Pa
             {
                 StripTrailingWhitespace(PrevToken);
                 StripLeadingWhitespace(PrevToken);
-                Node=ListAddNamedItem(Parent, Name, CopyStr(NULL, PrevToken));
-                Node->ItemType=ITEM_VALUE;
+                ParserAddValue(Parent, Name, PrevToken);
             }
 
             count=0;
@@ -200,23 +208,23 @@ type name
 
 static int ParserConfigCheckForBrace(const char **Data)
 {
-char *Token=NULL;
-const char *ptr;
-int result=FALSE;
+    char *Token=NULL;
+    const char *ptr;
+    int result=FALSE;
 
-ptr=*Data;
-if (! ptr) return(FALSE);
+    ptr=*Data;
+    if (! ptr) return(FALSE);
 
-while (isspace(*ptr)) ptr++;
-GetToken(ptr, CONFIG_FILE_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP|GETTOKEN_HONOR_QUOTES);
-if (strcmp(Token, "{")==0)
-{
-	*Data=ptr;
-	result=TRUE;
-}
-DestroyString(Token);
+    while (isspace(*ptr)) ptr++;
+    GetToken(ptr, CONFIG_FILE_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP|GETTOKEN_HONOR_QUOTES);
+    if (strcmp(Token, "{")==0)
+    {
+        *Data=ptr;
+        result=TRUE;
+    }
+    DestroyString(Token);
 
-return(result);
+    return(result);
 }
 
 
@@ -224,9 +232,9 @@ return(result);
 static const char *ParserConfigItems(int ParserType, const char *Doc, ListNode *Parent, int IndentLevel)
 {
     const char *ptr;
-    char *Token=NULL, *PrevToken=NULL, *Name=NULL;
+    char *Token=NULL, *PrevToken=NULL, *Name=NULL, *Value=NULL;
     ListNode *Node;
-    int BreakOut=FALSE;
+    int BreakOut=FALSE, NewKey=TRUE;
 
 
     ptr=Doc;
@@ -246,53 +254,64 @@ static const char *ParserConfigItems(int ParserType, const char *Doc, ListNode *
             StripTrailingWhitespace(Name);
 
             ptr=ParserAddNewStructure(ptr, ParserType, Parent, ITEM_ENTITY, Name, IndentLevel+1);
-						Name=CopyStr(Name,"");
-						Token=CopyStr(Token,"");
+            Name=CopyStr(Name,"");
+            Token=CopyStr(Token,"");
             break;
 
+        //these are all possible seperators in key=value lines
         case ' ':
         case '	':
         case ':':
         case '=':
-					  Name=CopyStr(Name, PrevToken);
-            //ptr=GetToken(ptr,"\n|;|}|{",&Token,GETTOKEN_MULTI_SEP | GETTOKEN_INCLUDE_SEP | GETTOKEN_HONOR_QUOTES);
-				break;
+            if (NewKey)
+            {
+                Name=CopyStr(Name, PrevToken);
+                //as this is the seperator in key=value so we do not
+                //want to treat it as a token
+                Token=CopyStr(Token, "");
+
+                //from here on in anything will be a value, so clear variable out
+                Value=CopyStr(Value, "");
+                NewKey=FALSE;
+            }
+            else Value=CatStr(Value, Token);
+            break;
 
         case '\r':
-				break;
+            break;
 
         case '}':
             BreakOut=TRUE;
-						//fall through
+        //fall through
 
 
         case '\n':
-						if (ParserConfigCheckForBrace(&ptr)) 
-						{
-							Name=MCatStr(Name, " ", PrevToken, NULL);
-							break;
-						}
-						//fall through
+            if (ParserConfigCheckForBrace(&ptr))
+            {
+                Name=MCatStr(Name, " ", PrevToken, NULL);
+                Value=CopyStr(Value, "");
+                break;
+            }
+        //fall through
 
-						
+
 
         case ';':
-						if (StrValid(PrevToken))
-						{
-	            StripLeadingWhitespace(PrevToken);
-	            StripTrailingWhitespace(PrevToken);
-							if (StrValid(Name))
-							{
- 			           Node=ListAddNamedItem(Parent, Name, CopyStr(NULL, PrevToken));
-    			       Node->ItemType=ITEM_VALUE;
-							}
-							Name=CopyStr(Name,"");
-							//we don't want \r \n or ; tokens included in anything
-							Token=CopyStr(Token,"");
-						}
+            if (StrValid(Value))
+            {
+                StripLeadingWhitespace(Value);
+                StripTrailingWhitespace(Value);
+                ParserAddValue(Parent, Name, Value);
+                Name=CopyStr(Name,"");
+                Value=CopyStr(Value,"");
+                //we don't want \r \n or ; tokens included in anything
+                Token=CopyStr(Token,"");
+            }
+            NewKey=TRUE;
             break;
 
         default:
+            Value=CatStr(Value, Token);
             break;
         }
         PrevToken=CopyStr(PrevToken, Token);
@@ -301,6 +320,7 @@ static const char *ParserConfigItems(int ParserType, const char *Doc, ListNode *
     DestroyString(PrevToken);
     DestroyString(Token);
     DestroyString(Name);
+    DestroyString(Value);
     return(ptr);
 }
 
@@ -330,8 +350,7 @@ static const char *ParserRSSEnclosure(ListNode *Parent, const char *Data)
             break;
         case '=':
             ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP|GETTOKEN_QUOTES);
-            Node=ListAddNamedItem(Parent, Name, CopyStr(NULL, Token));
-            Node->ItemType=ITEM_VALUE;
+            ParserAddValue(Parent, Name, Token);
             break;
         default:
             Name=MCopyStr(Name, "enclosure_",Token,NULL);
@@ -373,17 +392,13 @@ static const char *ParserRSSItems(int ParserType, const char *Doc, ListNode *Par
             switch (*Token)
             {
             case '/':
-            		ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP);
+                ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP);
                 if (strcasecmp(Token,"item")==0) BreakOut=TRUE;
-								else if (strcasecmp(Token,"image")==0) BreakOut=TRUE;
+                else if (strcasecmp(Token,"image")==0) BreakOut=TRUE;
                 else if (strcasecmp(Token,"channel")==0) /*ignore */ ;
                 else if (strcasecmp(Token,"rss")==0) /*ignore */ ;
                 //if this is a 'close' for a previous 'open' then add all the data we collected
-                else if (strcasecmp(Token, Name)==0)
-                {
-                    Node=ListAddTypedItem(Parent, ITEM_VALUE, Name, CopyStr(NULL, PrevToken));
-                    PrevToken=CopyStr(PrevToken,"");
-                }
+                else if (strcasecmp(Token, Name)==0) ParserAddValue(Parent, Name, PrevToken);
                 break;
 
             case 'i':
@@ -392,7 +407,7 @@ static const char *ParserRSSItems(int ParserType, const char *Doc, ListNode *Par
                 {
                     ptr=ParserAddNewStructure(ptr, ParserType, Parent, ITEM_ENTITY, NULL, IndentLevel+1);
                 }
-								else if (strcasecmp(Token,"image")==0)
+                else if (strcasecmp(Token,"image")==0)
                 {
                     ptr=ParserAddNewStructure(ptr, ParserType, Parent, ITEM_ENTITY, Token, IndentLevel+1);
                 }
@@ -407,9 +422,9 @@ static const char *ParserRSSItems(int ParserType, const char *Doc, ListNode *Par
                 }
                 break;
 
-						case '?': //ignore ?xml and the like
-									PrevToken=CopyStr(PrevToken, "");
-								break;
+            case '?': //ignore ?xml and the like
+                PrevToken=CopyStr(PrevToken, "");
+                break;
 
             default:
                 PrevToken=CopyStr(PrevToken,"");
@@ -438,18 +453,18 @@ static const char *ParserRSSItems(int ParserType, const char *Doc, ListNode *Par
 
 static ListNode *ParserXMLItemsAddSubItem(ListNode *Parent, const char *Name, char *Value)
 {
-ListNode *Node=NULL;
+    ListNode *Node=NULL;
 
-	if (Parent->ItemType==ITEM_ROOT) Node=ListAddTypedItem(Parent, ITEM_VALUE, Name, Value);
-	else if (Parent->ItemType==ITEM_VALUE)
-	{
-			Parent->ItemType=ITEM_ENTITY;
-			Parent->Item=ListCreate();
-			Node=ListAddTypedItem((ListNode *) Parent->Item, ITEM_VALUE, Name, Value);
-	}
-	else Node=ListAddTypedItem((ListNode *) Parent->Item, ITEM_VALUE, Name, Value);
+    if (Parent->ItemType==ITEM_ROOT) Node=ListAddTypedItem(Parent, ITEM_VALUE, Name, Value);
+    else if (Parent->ItemType==ITEM_VALUE)
+    {
+        Parent->ItemType=ITEM_ENTITY;
+        Parent->Item=ListCreate();
+        Node=ListAddTypedItem((ListNode *) Parent->Item, ITEM_VALUE, Name, Value);
+    }
+    else Node=ListAddTypedItem((ListNode *) Parent->Item, ITEM_VALUE, Name, Value);
 
-	return(Node);
+    return(Node);
 }
 
 
@@ -475,13 +490,13 @@ static const char *ParserXMLItems(int ParserType, const char *Doc, ListNode *Par
             switch (*Token)
             {
             case '/':
-            		ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP);
+                ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP);
                 if (StrValid(Parent->Tag) && (strcasecmp(Token, Parent->Tag)==0))
                 {
-									if (Parent->ItemType==ITEM_VALUE) Parent->Item=CopyStr(Parent->Item, PrevToken);
-							    DestroyString(PrevToken);
-    							DestroyString(Token);
-									return(ptr);
+                    if (Parent->ItemType==ITEM_VALUE) Parent->Item=CopyStr(Parent->Item, PrevToken);
+                    DestroyString(PrevToken);
+                    DestroyString(Token);
+                    return(ptr);
                 }
                 break;
 
@@ -490,39 +505,39 @@ static const char *ParserXMLItems(int ParserType, const char *Doc, ListNode *Par
                 {
                     ptr=GetToken(ptr+7, "]]", &Token,0);
                     PrevToken=CatStr(PrevToken, Token);
-										while ((*ptr != '\0') && (*ptr != '>')) ptr++;
-										if (*ptr=='>') ptr++;
+                    while ((*ptr != '\0') && (*ptr != '>')) ptr++;
+                    if (*ptr=='>') ptr++;
                 }
                 break;
 
-						case '?': //ignore ?xml and the like
-									PrevToken=CopyStr(PrevToken, "");
-								break;
+            case '?': //ignore ?xml and the like
+                PrevToken=CopyStr(PrevToken, "");
+                break;
 
 
             default:
-							//this will be the name of the tag
-							PrevToken=CopyStr(PrevToken, Token);
+                //this will be the name of the tag
+                PrevToken=CopyStr(PrevToken, Token);
 
-							//consume anything after the tag
-            	ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP);
-							while (ptr && (strcmp(Token, ">") !=0) )
-							{
-								if (strcmp(Token,"/")==0) 
-								{
-									ParserXMLItemsAddSubItem(Parent, PrevToken, CopyStr(NULL, "?"));
-									PrevToken=CopyStr(PrevToken, "");
-								}
-            	ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP);
-							}
+                //consume anything after the tag
+                ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP);
+                while (ptr && (strcmp(Token, ">") !=0) )
+                {
+                    if (strcmp(Token,"/")==0)
+                    {
+                        ParserXMLItemsAddSubItem(Parent, PrevToken, CopyStr(NULL, "?"));
+                        PrevToken=CopyStr(PrevToken, "");
+                    }
+                    ptr=GetToken(ptr, XML_TOKENS, &Token,GETTOKEN_MULTI_SEP|GETTOKEN_INCLUDE_SEP);
+                }
 
-							if (ptr && StrValid(PrevToken))
-							{
-            		while (isspace(*ptr)) ptr++;
-								Node=ParserXMLItemsAddSubItem(Parent, PrevToken, NULL);
-								ptr=ParserXMLItems(ParserType, ptr, Node, IndentLevel + 1);
-							}
-              break;
+                if (ptr && StrValid(PrevToken))
+                {
+                    while (isspace(*ptr)) ptr++;
+                    Node=ParserXMLItemsAddSubItem(Parent, PrevToken, NULL);
+                    ptr=ParserXMLItems(ParserType, ptr, Node, IndentLevel + 1);
+                }
+                break;
             }
             break;
 
