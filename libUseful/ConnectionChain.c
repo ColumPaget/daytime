@@ -6,6 +6,7 @@
 #include "Errors.h"
 #include "Stream.h"
 #include "Ssh.h"
+#include "IPAddress.h"
 
 typedef enum {CONNECT_HOP_NONE, CONNECT_HOP_TCP, CONNECT_HOP_HTTPTUNNEL, CONNECT_HOP_SSH, CONNECT_HOP_SSHTUNNEL, CONNECT_HOP_SSHPROXY, CONNECT_HOP_SOCKS4, CONNECT_HOP_SOCKS5, CONNECT_HOP_SHELL_CMD, CONNECT_HOP_TELNET} THopTypes;
 static const char *HopTypes[]= {"none","tcp","https","ssh","sshtunnel","sshproxy","socks4","socks5","shell","telnet",NULL};
@@ -38,7 +39,7 @@ int SetGlobalConnectionChain(const char *Chain)
 
 //if a proxy helper was launched by the current program (check using getpid) then
 //this is called by 'atexit' on exit, to shutdown that helper
-static void ConnectionHopCloseAll()
+void ConnectionHopCloseAll()
 {
     ListNode *Curr;
     STREAM *S;
@@ -58,7 +59,7 @@ static void ConnectionHopCloseAll()
 int ConnectHopHTTPSProxy(STREAM *S, const char *Proxy, const char *Destination)
 {
     char *Tempstr=NULL, *Token=NULL;
-    char *Proto=NULL, *Host=NULL, *User=NULL, *Pass=NULL;
+    char *Host=NULL, *User=NULL, *Pass=NULL;
     const char *ptr=NULL;
     int result=FALSE, Port;
 
@@ -67,7 +68,7 @@ int ConnectHopHTTPSProxy(STREAM *S, const char *Proxy, const char *Destination)
     if (! (S->State & SS_INITIAL_CONNECT_DONE))
     {
         if (Port==0) Port=443;
-        S->in_fd=TCPConnect(Host,Port,0);
+        S->in_fd=TCPConnect(Host, Port, "");
         S->out_fd=S->in_fd;
         if (S->in_fd == -1)
         {
@@ -94,7 +95,7 @@ int ConnectHopHTTPSProxy(STREAM *S, const char *Proxy, const char *Destination)
         if (*Token=='2') result=TRUE;
         else RaiseError(0, "ConnectHopHTTPSProxy", "proxy request to %s:%d failed. %s", Host, Port, Tempstr);
 
-        while (StrLen(Tempstr))
+        while (StrValid(Tempstr))
         {
             Tempstr=STREAMReadLine(Tempstr,S);
             StripTrailingWhitespace(Tempstr);
@@ -211,6 +212,100 @@ int ConnectHopSocks5Auth(STREAM *S, const char *User, const char *Pass)
 
 
 
+static char *ConnectHopSocks5WriteAddress(char *Dest, int AddrType, const char *Addr)
+{
+    char *ptr;
+    int val;
+
+    ptr=Dest;
+    *ptr=AddrType;
+    ptr++;
+    switch (AddrType)
+    {
+    case HT_IP4:
+        *((uint32_t *) ptr)=StrtoIP(Addr);
+        ptr+=4;
+        break;
+
+    case HT_IP6:
+        StrtoIP6(Addr, (struct in6_addr *) ptr);
+        ptr+=16;
+        break;
+
+    default:
+        val=StrLen(Addr);
+        *ptr=val;
+        ptr++;
+        memcpy(ptr, Addr, val);
+        ptr+=val;
+        break;
+    }
+
+    return(ptr);
+}
+
+
+static int ConnectHopSocks5ReadAddress(STREAM *S)
+{
+    char *Tempstr=NULL, *IP6=NULL;
+    int result, val;
+    uint32_t IP4addr;
+
+    Tempstr=SetStrLen(Tempstr, 1024);
+    //read address type
+    result=STREAMReadBytes(S,Tempstr,1);
+    if (result == 1)
+    {
+        switch (Tempstr[0])
+        {
+        case HT_IP4:
+            result=STREAMReadBytes(S,(char *) &IP4addr,4);
+            if (IP4addr != 0) STREAMSetValue(S, "IPAddress", IPtoStr(IP4addr));
+            break;
+
+        case HT_IP6:
+            IP6=SetStrLen(IP6, 32);
+            result=STREAMReadBytes(S,IP6,16);
+            Tempstr=IP6toStr(Tempstr, (struct in6_addr *) IP6);
+            if (IP4addr != 0) STREAMSetValue(S, "IPAddress", Tempstr);
+            break;
+
+        default:
+            result=STREAMReadBytes(S,Tempstr,1);
+            val=Tempstr[0] & 0xFF;
+            result=STREAMReadBytes(S,Tempstr,val);
+            break;
+        }
+    }
+    Destroy(Tempstr);
+    Destroy(IP6);
+
+    return(TRUE);
+}
+
+
+
+static int ConnectHopSocks4ReadReply(STREAM *S)
+{
+    char *Tempstr=NULL;
+    int result;
+    int RetVal=FALSE;
+    uint32_t IP;
+
+    Tempstr=SetStrLen(Tempstr, 1024);
+    //Positive response will be 0x00 0x5a 0x00 0x00 0x00 0x00 0x00 0x00
+    //although only the leading two bytes (0x00 0x5a, or \0Z) matters
+    result=STREAMReadBytes(S,Tempstr,8);
+    if ((result==8) && (Tempstr[0]=='\0') && (Tempstr[1]=='Z'))
+    {
+        RetVal=TRUE;
+        IP=*(uint32_t *) (Tempstr + 4);
+        if (IP != 0) STREAMSetValue(S, "IPAddress", IPtoStr(IP));
+    }
+    return(RetVal);
+}
+
+
 int ConnectHopSocks(STREAM *S, int SocksLevel, const char *ProxyURL, const char *Destination)
 {
     char *Tempstr=NULL;
@@ -225,7 +320,7 @@ int ConnectHopSocks(STREAM *S, int SocksLevel, const char *ProxyURL, const char 
     if (! (S->State & SS_INITIAL_CONNECT_DONE))
     {
         val=atoi(Token);
-        S->in_fd=TCPConnect(Host, val, 0);
+        S->in_fd=TCPConnect(Host, val, "");
         S->out_fd=S->in_fd;
         if (S->in_fd == -1)
         {
@@ -273,27 +368,7 @@ int ConnectHopSocks(STREAM *S, int SocksLevel, const char *ProxyURL, const char 
 //Socks 5 has a 'reserved' byte after the connection type
         *ptr=0;
         ptr++;
-
-        *ptr=HostType;
-        ptr++;
-        switch (HostType)
-        {
-        case HT_IP4:
-            *((uint32_t *) ptr) =StrtoIP(Token);
-            ptr+=4;
-            break;
-
-        case HT_IP6:
-            break;
-
-        default:
-            val=StrLen(Token);
-            *ptr=val;
-            ptr++;
-            memcpy(ptr, Token, val);
-            ptr+=val;
-            break;
-        }
+        ptr=ConnectHopSocks5WriteAddress(ptr, HostType, Token);
     }
 
 
@@ -334,29 +409,22 @@ int ConnectHopSocks(STREAM *S, int SocksLevel, const char *ProxyURL, const char 
 
     STREAMWriteBytes(S,Tempstr,(char *)ptr-Tempstr);
     STREAMFlush(S);
+
+
     Tempstr=SetStrLen(Tempstr, 32);
-    result=STREAMReadBytes(S,Tempstr,32);
-
-
     if (SocksLevel==CONNECT_HOP_SOCKS5)
     {
-        if ((result > 8) && (Tempstr[0]==5) && (Tempstr[1]==0))
+        //read socks version (5) response code (0 for success) and a reserved byte
+        result=STREAMReadBytes(S,Tempstr,3);
+        if ((result == 3) && (Tempstr[0]==5) && (Tempstr[1]==0))
         {
             RetVal=TRUE;
+            ConnectHopSocks5ReadAddress(S);
+            //read port
+            result=STREAMReadBytes(S,Tempstr,2);
         }
     }
-    else
-    {
-        //Positive response will be 0x00 0x5a 0x00 0x00 0x00 0x00 0x00 0x00
-        //although only the leading two bytes (0x00 0x5a, or \0Z) matters
-        if ((result==8) && (Tempstr[0]=='\0') && (Tempstr[1]=='Z'))
-        {
-            RetVal=TRUE;
-
-            IP=*(uint32_t *) (Tempstr + 4);
-            if (IP != 0) STREAMSetValue(S, "IPAddress", IPtoStr(IP));
-        }
-    }
+    else RetVal=ConnectHopSocks4ReadReply(S);
 
 
     if (! RetVal) RaiseError(0, "ConnectHopSocks", "socks proxy at %s refused connection to %s", ProxyURL, Destination);
@@ -448,7 +516,6 @@ int ConnectHopSSH(STREAM *S, int Type, const char *ProxyURL, const char *Destina
     STREAM *tmpS;
     ListNode *Node;
     char *Tempstr=NULL;
-    const char *ptr;
     int result=FALSE, i;
     unsigned int Port=0;
 
@@ -465,7 +532,7 @@ int ConnectHopSSH(STREAM *S, int Type, const char *ProxyURL, const char *Destina
             ListAddNamedItem(S->Items, "LU:AssociatedStream", tmpS);
             for (i=0; i < 60; i++)
             {
-                S->in_fd=TCPConnect("127.0.0.1",Port,0);
+                S->in_fd=TCPConnect("127.0.0.1", Port, "");
                 if (S->in_fd > -1)
                 {
                     S->out_fd=S->in_fd;
@@ -489,7 +556,7 @@ int ConnectHopSSH(STREAM *S, int Type, const char *ProxyURL, const char *Destina
                 Tempstr=FormatStr(Tempstr, "%d", getpid());
                 STREAMSetValue(tmpS, "LU:LauncherPID", Tempstr);
                 ListAddNamedItem(ProxyHelpers, ProxyURL, tmpS);
-                atexit(ConnectionHopCloseAll);
+                LibUsefulSetupAtExit();
             }
         }
 
@@ -555,7 +622,7 @@ int STREAMProcessConnectHops(STREAM *S, const char *HopList)
             if (count > 0) result=TRUE;
             else
             {
-                if (STREAMDirectConnect(S, HopURL, 0)) result=TRUE;
+                if (STREAMConnect(S, HopURL, "")) result=TRUE;
                 else RaiseError(0, "ConnectHopTCP", "failed to connect to %s for destination %s", HopURL, Dest);
             }
             break;
@@ -592,7 +659,7 @@ int STREAMProcessConnectHops(STREAM *S, const char *HopList)
 
     if (StrValid(HopURL))
     {
-        if (! StrLen(S->Path)) S->Path=CopyStr(S->Path,HopURL);
+        if (! StrValid(S->Path)) S->Path=CopyStr(S->Path,HopURL);
         if (strncmp(HopURL,"ssl:",4)==0) DoSSLClientNegotiation(S,0);
     }
 

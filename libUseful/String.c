@@ -6,17 +6,6 @@
 #define va_copy(dest, src) (dest) = (src)
 #endif
 
-typedef struct
-{
-    const char *Str;
-    size_t len;
-} TStrLenCacheEntry;
-
-static int StrLenCacheSize=0;
-static TStrLenCacheEntry *StrLenCache=NULL;
-
-
-
 
 int strtobool(const char *str)
 {
@@ -71,6 +60,11 @@ char *strrep(char *str, char oldchar, char newchar)
     {
         if (*ptr==oldchar) *ptr=newchar;
     }
+
+    //if replacement char is a null, then replacing it will change length of string
+    //so detete it from strlen cache
+    if (newchar=='\0') StrLenCacheDel(str);
+
     return(str);
 }
 
@@ -83,6 +77,11 @@ char *strmrep(char *str, char *oldchars, char newchar)
     {
         if (strchr(oldchars,*ptr)) *ptr=newchar;
     }
+
+    //if replacement char is a null, then replacing it will change length of string
+    //so detete it from strlen cache
+    if (newchar=='\0') StrLenCacheDel(str);
+
     return(str);
 }
 
@@ -91,110 +90,29 @@ char *strmrep(char *str, char *oldchars, char newchar)
 int CompareStr(const char *S1, const char *S2)
 {
     if (
-        ((!S1) || (*S1=='\0')) &&
-        ((!S2) || (*S2=='\0'))
+        (! StrValid(S1)) &&
+        (! StrValid(S2))
     ) return(0);
 
-    if ((!S1) || (*S1=='\0')) return(-1);
-    if ((!S2) || (*S2=='\0')) return(1);
+    if (! StrValid(S1)) return(-1);
+    if (! StrValid(S2)) return(1);
 
     return(strcmp(S1,S2));
 }
 
 
-
-void StrLenCacheDel(const char *Str)
+int CompareStrNoCase(const char *S1, const char *S2)
 {
-    int i;
+    if (
+        (! StrValid(S1)) &&
+        (! StrValid(S2))
+    ) return(0);
 
-    for (i=0; i < StrLenCacheSize; i++)
-    {
-        if (StrLenCache[i].Str == Str) StrLenCache[i].Str=NULL;
-    }
+    if (! StrValid(S1)) return(-1);
+    if (! StrValid(S2)) return(1);
+
+    return(strcasecmp(S1,S2));
 }
-
-void StrLenCacheUpdate(const char *Str, int incr)
-{
-    int i;
-
-    for (i=0; i < StrLenCacheSize; i++)
-    {
-        if (StrLenCache[i].Str == Str) StrLenCache[i].len+=incr;
-    }
-}
-
-
-void StrLenCacheAdd(const char *Str, size_t len)
-{
-    int i, emptyslot=-1;
-
-    if (! StrLenCache)
-    {
-        StrLenCache=(TStrLenCacheEntry *) calloc(20, sizeof(TStrLenCacheEntry));
-        StrLenCacheSize=20;
-    }
-
-    for (i=0; i < StrLenCacheSize; i++)
-    {
-        if (StrLenCache[i].Str == NULL) emptyslot=i;
-        else if (StrLenCache[i].Str == Str)
-        {
-            StrLenCache[i].len=len;
-            return;
-        }
-    }
-
-    if (emptyslot == -1) emptyslot=rand() % StrLenCacheSize;
-
-    StrLenCache[emptyslot].Str=Str;
-    StrLenCache[emptyslot].len=len;
-}
-
-
-int StrLenFromCache(const char *Str)
-{
-    uint64_t c, i;
-
-    if (! Str) return(0);
-
-//apparently with a good compiler this gives a faster result than checking each byte
-//not sure I believe it but it doesn't cost much so...
-    c=*(uint64_t *) Str;
-    if ((c & 0xFF)==0) return(0);
-    if ((c & 0xFF00)==0) return(1);
-    if ((c & 0xFF0000)==0) return(2);
-    if ((c & 0xFF000000)==0) return(3);
-    if ((c & 0xFF00000000)==0) return(4);
-    if ((c & 0xFF0000000000)==0) return(5);
-    if ((c & 0xFF000000000000)==0) return(6);
-    if ((c & 0xFF00000000000000)==0) return(7);
-
-//okay, it's not a short string, so is it in the cache?
-    for (i=0; i < StrLenCacheSize; i++)
-    {
-        __builtin_prefetch (&StrLenCache[i].Str, 0, 3);
-        __builtin_prefetch (&StrLenCache[i+1].Str, 0, 3);
-
-        if (StrLenCache[i].Str == Str)
-        {
-//	fprintf(stderr, "strlen cache hit: %d\n", StrLenCache[i].len);
-            return(StrLenCache[i].len);
-        }
-    }
-//fprintf(stderr, "strlen cache miss: %d\n", StrLenCache[i].len);
-
-//okay, nothing worked, fall back to good old strlen
-    return(strlen(Str));
-}
-
-
-//Use strlen cache
-void Destroy(void *Obj)
-{
-    StrLenCacheDel(Obj);
-    if (Obj) free(Obj);
-}
-
 
 
 
@@ -208,7 +126,7 @@ char *SetStrLen(char *Str, size_t len)
     if (Str==NULL) ptr=(char *) calloc(1, len + 8);
     else ptr=(char *) realloc(Str, len + 8);
 
-    if (len > 8) StrLenCacheAdd(ptr, len);
+    StrLenCacheAdd(ptr, len);
     return(ptr);
 }
 
@@ -244,7 +162,7 @@ char *CatStrLen(char *Dest, const char *Src, size_t len)
     int dstlen;
 
     dstlen=StrLenFromCache(Dest);
-    Dest=SetStrLen(Dest,dstlen+len);
+    Dest=SetStrLen(Dest, dstlen+len);
     dst=Dest+dstlen;
     src=Src;
     end=src+len;
@@ -553,10 +471,7 @@ inline char *AddCharToBuffer(char *Dest, size_t DestLen, char Char)
 {
     char *actb_ptr;
 
-//if (Dest==NULL || ((DestLen % 100)==0))
     actb_ptr=SetStrLen(Dest, DestLen);
-//else actb_ptr=Dest;
-
     actb_ptr[DestLen]=Char;
     actb_ptr[DestLen+1]='\0';
 
@@ -568,10 +483,7 @@ inline char *AddBytesToBuffer(char *Dest, size_t DestLen, char *Bytes, size_t No
 {
     char *actb_ptr=NULL;
 
-//if (Dest==NULL || ((DestLen % 100)==0))
     actb_ptr=SetStrLen(Dest, DestLen + NoOfBytes);
-//else actb_ptr=Dest;
-
     memcpy(actb_ptr+DestLen,Bytes,NoOfBytes);
 
     return(actb_ptr);
@@ -648,8 +560,9 @@ char *StripCRLF(char *Str)
 char *StripQuotes(char *Str)
 {
     int len;
-    char *ptr, StartQuote='\0';
+    char *ptr, *end, StartQuote='\0';
 
+    if (! Str) return(Str);
     ptr=Str;
     while (isspace(*ptr)) ptr++;
 
@@ -657,10 +570,14 @@ char *StripQuotes(char *Str)
     {
         StartQuote=*ptr;
         len=StrLenFromCache(ptr);
-        if ((len > 0) && (StartQuote != '\0') && (ptr[len-1]==StartQuote))
+
+        end=ptr+len-1;
+
+        if ((len > 0) && (StartQuote != '\0') && (*end==StartQuote))
         {
-            if (ptr[len-1]==StartQuote) ptr[len-1]='\0';
-            memmove(Str,ptr+1,len);
+            *end='\0';
+            len--;
+            memmove(Str, ptr+1,len);
             StrLenCacheAdd(Str, len);
         }
     }

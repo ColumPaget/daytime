@@ -4,13 +4,16 @@ LIBS = @LIBS@ -lm
 FLAGS=$(CFLAGS) @DEFS@
 INSTALL=@INSTALL@
 prefix=@prefix@
+datarootdir=@datarootdir@
 bindir=$(prefix)@bindir@
 mandir=@mandir@/man1
-OBJ=common.o sysclock.o sntp.o command-line-args.o
+OBJ=common.o sysclock.o sntp.o command-line-args.o @LIBUSEFUL_BUNDLED@
 
 all: $(OBJ)
-	@cd libUseful; $(MAKE)
-	$(CC) $(FLAGS) $(LIBS) -g -odaytime $(OBJ) main.c libUseful/libUseful.a
+	$(CC) $(FLAGS) -g -odaytime $(OBJ) main.c @LIBUSEFUL_BUNDLED@ $(LIBS) 
+
+@LIBUSEFUL_BUNDLED@:
+	$(MAKE) -C libUseful
 
 common.o: common.h common.c
 	$(CC) $(FLAGS) -c common.c
@@ -25,11 +28,11 @@ sntp.o: sntp.c sntp.h common.h
 	$(CC) $(FLAGS) -c sntp.c
 
 clean:
-	@rm -f daytime *.o libUseful/*.o libUseful/*.a libUseful/*.so config.cache config.status config.log */config.cache */config.status */config.log
+	@rm -f daytime *.o libUseful/*.o libUseful/*.a libUseful/*.so config.cache config.status config.log */config.cache */config.status */config.log *.orig
 
 install:
-	$(INSTALL) daytime $(bindir)
-	$(INSTALL) daytime.1 $(mandir)
+	$(INSTALL) daytime $(DESTDIR)$(bindir)
+	$(INSTALL) daytime.1 $(DESTDIR)$(mandir)
 
 test:
 	-echo "no tests"

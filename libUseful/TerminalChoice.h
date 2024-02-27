@@ -1,3 +1,8 @@
+/*
+Copyright (c) 2015 Colum Paget <colums.projects@googlemail.com>
+* SPDX-License-Identifier: GPL-3.0
+*/
+
 /* This implements a simple one-line menu that looks like:
  *
  *    proceed Y/n? <yes> no
@@ -77,10 +82,10 @@ extern "C" {
 
 #define TERMCHOICE TERMMENU
 
-#define TerminalChoiceCreate TerminalWidgetCreate
 #define TerminalChoiceDestroy TerminalWidgetDestroy
 #define TerminalChoiceSetOptions TerminalWidgetSetOptions
 
+TERMCHOICE *TerminalChoiceCreate(STREAM *Term, const char *Config);
 void TerminalChoiceDraw(TERMCHOICE *MB);
 char *TerminalChoiceOnKey(char *RetStr, TERMCHOICE *MB, int key);
 char *TerminalChoiceProcess(char *RetStr, TERMCHOICE *MB);

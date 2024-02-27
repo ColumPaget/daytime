@@ -1,6 +1,8 @@
 #include "Http.h"
+#include "HttpChunkedTransfer.h"
 #include "DataProcessing.h"
 #include "ConnectionChain.h"
+#include "ContentType.h"
 #include "Hash.h"
 #include "URL.h"
 #include "OAuth.h"
@@ -8,6 +10,8 @@
 #include "base64.h"
 #include "SecureMem.h"
 #include "Errors.h"
+
+/* These functions relate to CLIENT SIDE http/https */
 
 
 #define HTTP_OKAY 0
@@ -65,235 +69,17 @@ void HTTPInfoDestroy(void *p_Info)
 
 
 
-//These functions relate to adding a 'Data processor' to the stream that
-//will decode chunked HTTP transfers
 
-typedef struct
+static void HTTPSetLoginCreds(HTTPInfoStruct *Info, const char *User, const char *Password)
 {
-    char *Buffer;
-    size_t ChunkSize;
-    size_t BuffLen;
-} THTTPChunk;
-
-
-
-int HTTPChunkedInit(TProcessingModule *Mod, const char *Args)
-{
-    Mod->Data=(THTTPChunk *) calloc(1, sizeof(THTTPChunk));
-
-    return(TRUE);
-}
-
-
-
-int HTTPChunkedRead(TProcessingModule *Mod, const char *InBuff, unsigned long InLen, char **OutBuff, unsigned long *OutLen, int Flush)
-{
-    size_t len=0, bytes_out=0;
-    THTTPChunk *Chunk;
-    char *ptr, *vptr, *end;
-
-    Chunk=(THTTPChunk *) Mod->Data;
-    if (InLen > 0)
+    if (Info->AuthFlags == 0) Info->AuthFlags |= HTTP_AUTH_BASIC;
+    if (Info->AuthFlags != HTTP_AUTH_OAUTH)
     {
-        len=Chunk->BuffLen+InLen;
-        Chunk->Buffer=SetStrLen(Chunk->Buffer,len);
-        ptr=Chunk->Buffer+Chunk->BuffLen;
-        memcpy(ptr,InBuff,InLen);
-        Chunk->Buffer[len]='\0';
-        Chunk->BuffLen=len;
+        Info->UserName=CopyStr(Info->UserName, User);
+
+//if (StrValid(Password)) CredsStoreAdd(Info->Host, Info->UserName, Password);
+        Info->Credentials=CopyStr(Info->Credentials, Password);
     }
-    else len=Chunk->BuffLen;
-
-    end=Chunk->Buffer+Chunk->BuffLen;
-
-    if (Chunk->ChunkSize==0)
-    {
-        //if chunksize == 0 then read the size of the next chunk
-
-        //if there's nothing in our buffer, and nothing being added, then
-        //we've already finished!
-        if ((Chunk->BuffLen==0) && (InLen < 1)) return(STREAM_CLOSED);
-
-        vptr=Chunk->Buffer;
-        //skip past any leading '\r' or '\n'
-        if (*vptr=='\r') vptr++;
-        if (*vptr=='\n') vptr++;
-        ptr=memchr(vptr,'\n', end-vptr);
-
-        //sometimes people seem to miss off the final '\n', so if we get told there's no more data
-        //we should use a '\r' if we've got one
-        if ((! ptr) && (InLen < 1))
-        {
-            ptr=memchr(vptr,'\r',end-vptr);
-            if (! ptr) ptr=end;
-        }
-
-
-        if (ptr)
-        {
-            StrTrunc(Chunk->Buffer, ptr - Chunk->Buffer);
-            ptr++;
-        }
-        else return(0);
-
-        Chunk->ChunkSize=strtol(vptr,NULL,16);
-        //if we got chunksize of 0 then we're done, return STREAM_CLOSED
-        if (Chunk->ChunkSize==0) return(STREAM_CLOSED);
-
-        Chunk->BuffLen=end-ptr;
-
-        if (Chunk->BuffLen > 0)	memmove(Chunk->Buffer, ptr, Chunk->BuffLen);
-        //in case it went negative in the above calcuation
-        else Chunk->BuffLen=0;
-
-        //maybe we have a full chunk already? Set len to allow us to use it
-        len=Chunk->BuffLen;
-    }
-
-
-//either path we've been through above can result in a full chunk in the buffer
-    if (len >= Chunk->ChunkSize)
-    {
-        bytes_out=Chunk->ChunkSize;
-
-        //We should really grow OutBuff to take all the data
-        //but for the sake of simplicity we'll just use the space
-        //supplied
-        if (bytes_out > *OutLen) bytes_out=*OutLen;
-        memcpy(*OutBuff,Chunk->Buffer,bytes_out);
-
-        ptr=Chunk->Buffer + bytes_out;
-        Chunk->BuffLen   -= bytes_out;
-        Chunk->ChunkSize -= bytes_out;
-        memmove(Chunk->Buffer, ptr, end-ptr);
-
-    }
-
-    if (Chunk->ChunkSize < 0) Chunk->ChunkSize=0;
-
-    return(bytes_out);
-}
-
-
-
-int HTTPChunkedClose(TProcessingModule *Mod)
-{
-    THTTPChunk *Chunk;
-
-    Chunk=(THTTPChunk *) Mod->Data;
-    DestroyString(Chunk->Buffer);
-    free(Chunk);
-
-    return(TRUE);
-}
-
-
-void HTTPAddChunkedProcessor(STREAM *S)
-{
-    TProcessingModule *Mod=NULL;
-
-    Mod=(TProcessingModule *) calloc(1,sizeof(TProcessingModule));
-    Mod->Name=CopyStr(Mod->Name,"HTTP:Chunked");
-    Mod->Init=HTTPChunkedInit;
-    Mod->Read=HTTPChunkedRead;
-    Mod->Close=HTTPChunkedClose;
-
-    Mod->Init(Mod, "");
-    STREAMAddDataProcessor(S,Mod,"");
-}
-
-
-
-char *HTTPUnQuote(char *RetBuff, const char *Str)
-{
-    char *RetStr=NULL, *Token=NULL;
-    const char *ptr;
-    int olen=0, ilen;
-
-    RetStr=CopyStr(RetStr,"");
-    ilen=StrLen(Str);
-
-    for (ptr=Str; ptr < (Str+ilen); ptr++)
-    {
-        switch (*ptr)
-        {
-        case '+':
-            RetStr=AddCharToBuffer(RetStr,olen,' ');
-            olen++;
-            break;
-
-        case '%':
-            ptr++;
-            Token=CopyStrLen(Token,ptr,2);
-            ptr++; //not +=2, as we will increment again
-            RetStr=AddCharToBuffer(RetStr,olen,strtol(Token,NULL,16) & 0xFF);
-            olen++;
-            break;
-
-        default:
-            RetStr=AddCharToBuffer(RetStr,olen,*ptr);
-            olen++;
-            break;
-        }
-
-    }
-
-    StrLenCacheAdd(RetStr, olen);
-
-    DestroyString(Token);
-    return(RetStr);
-}
-
-
-char *HTTPQuoteChars(char *RetBuff, const char *Str, const char *CharList)
-{
-    char *RetStr=NULL, *Token=NULL;
-    const char *ptr;
-    int olen=0, ilen;
-
-    RetStr=CopyStr(RetStr,"");
-    ilen=StrLen(Str);
-
-    for (ptr=Str; ptr < (Str+ilen); ptr++)
-    {
-        if (strchr(CharList,*ptr))
-        {
-            // replacing ' ' with '+' should work, but some servers seem to no longer support it
-            /*
-            	if (*ptr==' ')
-            	{
-            RetStr=AddCharToBuffer(RetStr,olen,'+');
-            	olen++;
-            	}
-            	else
-            */
-            {
-                Token=FormatStr(Token,"%%%02X",*ptr);
-                StrLenCacheAdd(RetStr, olen);
-                RetStr=CatStr(RetStr,Token);
-                olen+=StrLen(Token);
-            }
-        }
-        else
-        {
-            RetStr=AddCharToBuffer(RetStr,olen,*ptr);
-            olen++;
-        }
-    }
-
-
-    RetStr[olen]='\0';
-    StrLenCacheAdd(RetStr, olen);
-
-    DestroyString(Token);
-    return(RetStr);
-}
-
-
-
-char *HTTPQuote(char *RetBuff, const char *Str)
-{
-    return(HTTPQuoteChars(RetBuff, Str, " \t\r\n\"#%()[]{}?&!,+':;/"));
 }
 
 
@@ -308,9 +94,8 @@ void HTTPInfoSetValues(HTTPInfoStruct *Info, const char *Host, int Port, const c
     Info->Doc=CopyStr(Info->Doc,Doc);
     Info->PostContentType=CopyStr(Info->PostContentType,ContentType);
     Info->PostContentLength=ContentLength;
-    Info->UserName=CopyStr(Info->UserName, Logon);
 
-    if (StrValid(Password)) CredsStoreAdd(Host, Logon, Password);
+    if (StrValid(Logon) || StrValid(Password)) HTTPSetLoginCreds(Info, Logon, Password);
 }
 
 
@@ -321,7 +106,7 @@ HTTPInfoStruct *HTTPInfoCreate(const char *Protocol, const char *Host, int Port,
     HTTPInfoStruct *Info;
     const char *ptr;
 
-    Info=(HTTPInfoStruct *) calloc(1,sizeof(HTTPInfoStruct));
+    Info=(HTTPInfoStruct *) calloc(1, sizeof(HTTPInfoStruct));
     Info->Protocol=CopyStr(Info->Protocol,Protocol);
     HTTPInfoSetValues(Info, Host, Port, Logon, Password, Method, Doc, ContentType, ContentLength);
 
@@ -345,6 +130,7 @@ HTTPInfoStruct *HTTPInfoCreate(const char *Protocol, const char *Host, int Port,
 
     return(Info);
 }
+
 
 char *HTTPInfoToURL(char *RetBuff, HTTPInfoStruct *Info)
 {
@@ -411,8 +197,7 @@ void HTTPInfoSetURL(HTTPInfoStruct *Info, const char *Method, const char *iURL)
     if (StrValid(Token)) Info->Port=atoi(Token);
 
 
-    if (StrValid(Proto) && (strcmp(Proto,"https")==0)) Info->Flags |= HTTP_SSL;
-
+    if (StrValid(Proto) && (CompareStr(Proto,"https")==0)) Info->Flags |= HTTP_SSL;
 
     ptr=GetNameValuePair(ptr,"\\S","=",&Token, &Value);
     while (ptr)
@@ -431,19 +216,19 @@ void HTTPInfoSetURL(HTTPInfoStruct *Info, const char *Method, const char *iURL)
         else if (strcasecmp(Token, "user-agent")==0) Info->UserAgent=CopyStr(Info->UserAgent, Value);
         else if (strcasecmp(Token, "user")==0) User=CopyStr(User, Value);
         else if (strcasecmp(Token, "password")==0) Pass=CopyStr(Pass, Value);
+        else if (strcasecmp(Token, "keepalive")==0) Info->Flags |= HTTP_KEEPALIVE;
+        else if (strcasecmp(Token, "timeout")==0) Info->Timeout=atoi(Value);
+        else if (strcasecmp(Token, "authtype")==0)
+        {
+            if (strcasecmp(Value, "digest")==0) Info->AuthFlags |= HTTP_AUTH_DIGEST;
+        }
+        else if (strcasecmp(Token, "digest-auth")==0) Info->AuthFlags |= HTTP_AUTH_DIGEST;
         else SetVar(Info->CustomSendHeaders, Token, Value);
         ptr=GetNameValuePair(ptr,"\\S","=",&Token, &Value);
     }
 
-    if (Info->PostContentLength > 0) Info->Doc=MCatStr(Info->Doc, "?", Args, NULL);
-    else HTTPInfoPOSTSetContent(Info, "", Args, 0, 0);
-
-    if (StrValid(User) || StrValid(Pass)) Info->UserName=CopyStr(Info->UserName, User);
-    if (StrValid(Pass))
-    {
-        Info->AuthFlags |= HTTP_AUTH_BASIC;
-        CredsStoreAdd(Info->Host, User, Pass);
-    }
+    HTTPInfoPOSTSetContent(Info, "", Args, 0, 0);
+    HTTPSetLoginCreds(Info, User, Pass);
 
     if (StrEnd(Info->Doc)) Info->Doc=CopyStr(Info->Doc, "/");
 
@@ -467,51 +252,55 @@ HTTPInfoStruct *HTTPInfoFromURL(const char *Method, const char *URL)
 }
 
 
-void HTTPParseCookie(HTTPInfoStruct *Info, const char *Str)
+
+
+
+
+//Parse Cookies from Server. These are sent singly, and what comes after ';' is
+//extra settings for that apply to this single cookie
+static void HTTPParseServerCookie(const char *Str)
 {
-    const char *startptr, *endptr;
-    char *Tempstr=NULL;
-    ListNode *Curr;
-    int len;
+    char *Name=NULL, *Value=NULL;
+    ListNode *Node;
+    const char *ptr;
 
-    startptr=Str;
-    while (*startptr==' ') startptr++;
 
-    endptr=strchr(startptr,';');
-    if (endptr==NULL) endptr=startptr+strlen(Str);
-//	if (( *endptr==';') || (*endptr=='\r') ) endptr--;
+    if (! Cookies) Cookies=ListCreate(LIST_FLAG_TIMEOUT);
 
-    Tempstr=CopyStrLen(Tempstr,startptr,endptr-startptr);
+    ptr=GetNameValuePair(Str, ";", "=", &Name, &Value);
+    StripTrailingWhitespace(Name);
+    StripLeadingWhitespace(Name);
+    StripTrailingWhitespace(Value);
+    StripLeadingWhitespace(Value);
+    Node=SetVar(Cookies, Name, Value);
 
-    Curr=ListGetNext(Cookies);
-    endptr=strchr(Tempstr,'=');
-    len=endptr-Tempstr;
-    len--;
-
-    while (Curr !=NULL)
+    ptr=GetNameValuePair(ptr, ";", "=", &Name, &Value);
+    while (ptr)
     {
-        if (strncmp(Curr->Item,Tempstr,len)==0)
-        {
-            Curr->Item=CopyStr(Curr->Item,Tempstr);
-            DestroyString(Tempstr);
-            return;
-        }
-        Curr=ListGetNext(Curr);
+        StripTrailingWhitespace(Name);
+        StripLeadingWhitespace(Name);
+        StripTrailingWhitespace(Value);
+        StripLeadingWhitespace(Value);
+
+        if (strcasecmp(Name, "expires")==0) ListNodeSetTime(Node, DateStrToSecs("%a, %d %b %Y %H:%M:%S", Value, NULL));
+        if (strcasecmp(Name, "max-age")==0) ListNodeSetTime(Node, GetTime(TIME_CACHED) + atoi(Value));
+        ptr=GetNameValuePair(ptr, ";", "=", &Name, &Value);
     }
 
-    if (! Cookies) Cookies=ListCreate();
-    ListAddItem(Cookies,(void *)CopyStr(NULL,Tempstr));
+    DestroyString(Name);
+    DestroyString(Value);
 
-    DestroyString(Tempstr);
 }
 
 
 
-char *AppendCookies(char *InStr, ListNode *CookieList)
+char *HTTPClientAppendCookies(char *InStr, ListNode *CookieList)
 {
     ListNode *Curr;
     char *Tempstr=NULL;
+    time_t Expires, Now;
 
+    Now=GetTime(TIME_CACHED);
     Tempstr=InStr;
     Curr=ListGetNext(CookieList);
 
@@ -520,9 +309,13 @@ char *AppendCookies(char *InStr, ListNode *CookieList)
         Tempstr=CatStr(Tempstr,"Cookie: ");
         while ( Curr )
         {
-            Tempstr=CatStr(Tempstr,(char *)Curr->Item);
+            Expires=ListNodeGetTime(Curr);
+            if ((Expires == 0) || (Expires < Now))
+            {
+                Tempstr=MCatStr(Tempstr, Curr->Tag, "=", (char *) Curr->Item, NULL);
+                if (Curr->Next) Tempstr=CatStr(Tempstr, "; ");
+            }
             Curr=ListGetNext(Curr);
-            if (Curr) Tempstr=CatStr(Tempstr, "; ");
         }
         Tempstr=CatStr(Tempstr,"\r\n");
     }
@@ -691,7 +484,7 @@ static void HTTPParseHeader(STREAM *S, HTTPInfoStruct *Info, char *Header)
 
         case 'S':
         case 's':
-            if (strcasecmp(Token,"Set-Cookie")==0) HTTPParseCookie(Info,ptr);
+            if (strcasecmp(Token,"Set-Cookie")==0) HTTPParseServerCookie(ptr);
             else if (strcasecmp(Token,"Status")==0)
             {
                 //'Status' overrides the response
@@ -766,7 +559,7 @@ char *HTTPDigest(char *RetStr, const char *Method, const char *Logon, const char
 
 
 
-static char *HTTPHeadersAppendAuth(char *RetStr, char *AuthHeader, HTTPInfoStruct *Info, char *AuthInfo)
+static char *HTTPHeadersAppendAuth(char *RetStr, const char *AuthHeader, HTTPInfoStruct *Info, const char *AuthInfo)
 {
     char *SendStr=NULL, *Tempstr=NULL, *Realm=NULL, *Nonce=NULL;
     const char *ptr;
@@ -783,8 +576,18 @@ static char *HTTPHeadersAppendAuth(char *RetStr, char *AuthHeader, HTTPInfoStruc
     ptr=GetToken(ptr,":",&Nonce,0);
 
     passlen=CredsStoreLookup(Realm, Info->UserName, &p_Password);
-
+    if (! passlen)
+    {
+        Tempstr=FormatStr(Tempstr, "https://%s:%d",Info->Host, Info->Port);
+        passlen=CredsStoreLookup(Tempstr, Info->UserName, &p_Password);
+    }
     if (! passlen) passlen=CredsStoreLookup(Info->Host, Info->UserName, &p_Password);
+    if (!passlen)
+    {
+        p_Password=Info->Credentials;
+        passlen=StrLen(Info->Credentials);
+    }
+
 
     if (passlen)
     {
@@ -850,7 +653,13 @@ void HTTPSendHeaders(STREAM *S, HTTPInfoStruct *Info)
 
     //probably need to find some other way of detecting need for sending ContentLength other than whitelisting methods
     if ((Info->PostContentLength > 0) &&
-            ( (strcasecmp(Info->Method,"POST")==0) || (strcasecmp(Info->Method,"PUT")==0) || (strcasecmp(Info->Method,"PATCH")==0))
+            (
+                (strcasecmp(Info->Method,"POST")==0) ||
+                (strcasecmp(Info->Method,"PUT")==0) ||
+                (strcasecmp(Info->Method,"PROPFIND")==0) ||
+                (strcasecmp(Info->Method,"PROPPATCH")==0) ||
+                (strcasecmp(Info->Method,"PATCH")==0)
+            )
        )
     {
         Tempstr=FormatStr(Tempstr,"Content-Length: %d\r\n",Info->PostContentLength);
@@ -869,7 +678,8 @@ void HTTPSendHeaders(STREAM *S, HTTPInfoStruct *Info)
     {
         Info->Authorization=MCopyStr(Info->Authorization, "Bearer ", OAuthLookup(Info->Credentials, FALSE), NULL);
     }
-    else if (StrValid(Info->Authorization)) SendStr=HTTPHeadersAppendAuth(SendStr, "Authorization", Info, Info->Authorization);
+
+    if (StrValid(Info->Authorization)) SendStr=HTTPHeadersAppendAuth(SendStr, "Authorization", Info, Info->Authorization);
     else if (Info->AuthFlags & (HTTP_AUTH_HOST | HTTP_AUTH_BASIC | HTTP_AUTH_DIGEST)) SendStr=HTTPHeadersAppendAuth(SendStr, "Authorization", Info, Info->Host);
 
     if (Info->ProxyAuthorization) SendStr=HTTPHeadersAppendAuth(SendStr, "Proxy-Authorization", Info, Info->ProxyAuthorization);
@@ -942,7 +752,7 @@ void HTTPSendHeaders(STREAM *S, HTTPInfoStruct *Info)
 
     if (! (Info->Flags & HTTP_NOCOOKIES))
     {
-        SendStr=AppendCookies(SendStr,Cookies);
+        SendStr=HTTPClientAppendCookies(SendStr,Cookies);
     }
 
     SendStr=CatStr(SendStr,"\r\n");
@@ -977,7 +787,7 @@ void HTTPReadHeaders(STREAM *S, HTTPInfoStruct *Info)
     Info->ContentLength=0;
 
 //Not needed
-//Info->RedirectPath=CopyStr(Info->RedirectPath,"");
+    Info->RedirectPath=CopyStr(Info->RedirectPath,"");
     Info->Flags &= ~(HTTP_CHUNKED | HTTP_GZIP | HTTP_DEFLATE);
     Tempstr=STREAMReadLine(Tempstr,S);
     if (Tempstr)
@@ -1041,7 +851,7 @@ int HTTPProcessResponse(HTTPInfoStruct *HTTPInfo)
         case 303:
         case 307:
         case 308:
-            if (HTTPInfo->PreviousRedirect && (strcmp(HTTPInfo->RedirectPath,HTTPInfo->PreviousRedirect)==0)) result=HTTP_CIRCULAR_REDIRECTS;
+            if (HTTPInfo->PreviousRedirect && (CompareStr(HTTPInfo->RedirectPath,HTTPInfo->PreviousRedirect)==0)) result=HTTP_CIRCULAR_REDIRECTS;
             else
             {
                 if (HTTPInfo->Flags & HTTP_DEBUG) fprintf(stderr,"HTTP: Redirected to %s\n",HTTPInfo->RedirectPath);
@@ -1053,7 +863,7 @@ int HTTPProcessResponse(HTTPInfoStruct *HTTPInfo)
 
                 //if HTTP_SSL_REWRITE is set, then all redirects get forced to https
                 if (HTTPInfo->Flags & HTTP_SSL_REWRITE) Proto=CopyStr(Proto,"https");
-                if (strcmp(Proto,"https")==0) HTTPInfo->Flags |= HTTP_SSL;
+                if (CompareStr(Proto,"https")==0) HTTPInfo->Flags |= HTTP_SSL;
                 else HTTPInfo->Flags &= ~HTTP_SSL;
 
                 //303 Redirects must be get!
@@ -1101,11 +911,10 @@ int HTTPProcessResponse(HTTPInfoStruct *HTTPInfo)
 
 STREAM *HTTPSetupConnection(HTTPInfoStruct *Info, int ForceHTTPS)
 {
-    char *Proto=NULL, *Host=NULL, *Tempstr=NULL;
+    char *Proto=NULL, *Host=NULL, *URL=NULL, *Tempstr=NULL;
     const char *ptr;
     int Port=0, Flags=0;
     STREAM *S;
-
 
     //proto in here will not be http/https but tcp/ssl/tls
     Proto=CopyStr(Proto,"tcp");
@@ -1125,32 +934,44 @@ STREAM *HTTPSetupConnection(HTTPInfoStruct *Info, int ForceHTTPS)
 
         if (Port==0)
         {
-            if (strcmp(Proto,"ssl")==0) Port=443;
+            if (CompareStr(Proto,"ssl")==0) Port=443;
             else Port=80;
         }
     }
 
-    if (StrValid(Info->ConnectionChain)) Tempstr=FormatStr(Tempstr,"%s|%s:%s:%d/",Info->ConnectionChain,Proto,Host,Port);
-    else Tempstr=FormatStr(Tempstr,"%s:%s:%d/",Proto,Host,Port);
+    if (StrValid(Info->ConnectionChain)) URL=FormatStr(URL,"%s|%s:%s:%d/",Info->ConnectionChain,Proto,Host,Port);
+    else URL=FormatStr(URL,"%s:%s:%d/",Proto,Host,Port);
 
-    S=STREAMOpen(Tempstr, "");
-    if (S)
+    Tempstr=FormatStr(Tempstr, "rw timeout=%d", Info->Timeout);
+
+    //we cannot create Info->S if there is one, but we can't free/destroy it
+    //thus we map it to 'S' and if we don't connect, we set 'S' to null and
+    //return that.
+    if (! Info->S) Info->S=STREAMCreate();
+    S=Info->S;
+    //must do this before STREAMConnect as otherwise we get 'hostname mismatch' errors during SSL setup
+    //because the underlying system doesn't know what the URL is to checkt the hostname
+    S->Path=FormatStr(S->Path,"%s://%s:%d/%s", Proto, Host, Port, Info->Doc);
+
+
+    if (Info->Flags & HTTP_DEBUG) fprintf(stderr,"Connect: %s  Config: %s\n", URL, Tempstr);
+
+    if (STREAMConnect(S, URL, Tempstr))
     {
         S->Type=STREAM_TYPE_HTTP;
-        HTTPSendHeaders(S,Info);
     }
     else
     {
         RaiseError(ERRFLAG_ERRNO, "http", "failed to connect to %s:%d",Host,Port);
-        STREAMClose(S);
         S=NULL;
     }
 
-    Info->S=S;
+    if (S) STREAMSetItem(S, "HTTP:InfoStruct", Info);
 
-    DestroyString(Proto);
     DestroyString(Tempstr);
+    DestroyString(Proto);
     DestroyString(Host);
+    DestroyString(URL);
 
     return(S);
 }
@@ -1161,36 +982,91 @@ STREAM *HTTPConnect(HTTPInfoStruct *Info)
 {
     STREAM *S=NULL;
 
-    if (
-        (g_HTTPFlags & HTTP_REQ_HTTPS) ||
-        (g_HTTPFlags & HTTP_TRY_HTTPS)
-    )
+    S=Info->S;
+
+    //returns false if S is null, so is safe to call
+    if (! STREAMIsConnected(S))
     {
-        S=HTTPSetupConnection(Info, TRUE);
-        if (g_HTTPFlags & HTTP_REQ_HTTPS) return(S);
+        //if we require HTTPS or 'try first' HTTPS  is set, try that https first
+        if ( (g_HTTPFlags & HTTP_REQ_HTTPS) || (g_HTTPFlags & HTTP_TRY_HTTPS)) S=HTTPSetupConnection(Info, TRUE);
+        //if https isn't required, then we can try unencrypted HTTP
+        if ( (! STREAMIsConnected(S)) && (! (g_HTTPFlags & HTTP_REQ_HTTPS)) ) S=HTTPSetupConnection(Info, FALSE);
     }
 
-    if (!S) S=HTTPSetupConnection(Info, FALSE);
+    if (S && (! (Info->State & HTTP_HEADERS_SENT)) ) HTTPSendHeaders(S,Info);
 
-    if (S)
-    {
-        S->Path=FormatStr(S->Path,"%s://%s:%d/%s",Info->Protocol,Info->Host,Info->Port,Info->Doc);
-        STREAMSetItem(S, "HTTP:InfoStruct", Info);
-    }
     return(S);
+}
+
+
+
+static void HTTPTransactSetupDataProcessors(HTTPInfoStruct *Info, STREAM *S)
+{
+    if (Info->Flags & HTTP_CHUNKED) HTTPAddChunkedProcessor(S);
+
+    if (Info->Flags & HTTP_GZIP)
+    {
+        STREAMAddStandardDataProcessor(S,"uncompress","gzip","");
+    }
+    else if (Info->Flags & HTTP_DEFLATE)
+    {
+        STREAMAddStandardDataProcessor(S,"uncompress","zlib","");
+    }
+
+    if (Info->Flags & (HTTP_CHUNKED | HTTP_GZIP | HTTP_DEFLATE)) STREAMReBuildDataProcessors(S);
+}
+
+
+static int HTTPTransactHandleAuthRequest(HTTPInfoStruct *Info, int AuthResult)
+{
+    switch (AuthResult)
+    {
+    //here this flag just means the server asked us to authenticate, not specifically that it asked
+    //for basic authentication
+    case HTTP_AUTH_BASIC:
+
+        //if we're using OAUTH then try doing a refresh to get new creds.
+        //Set a flag (HTTP_AUTH_RETURN) that means we'll give up if we fail again
+        if (Info->AuthFlags & HTTP_AUTH_OAUTH)
+        {
+            //if HTTP_AUTH_RETURN is set, then we alread tried getting a refresh
+            if (Info->AuthFlags & HTTP_AUTH_RETURN) return(FALSE);
+            Info->Authorization=MCopyStr(Info->Authorization, "Bearer ", OAuthLookup(Info->Credentials, TRUE), NULL);
+            Info->AuthFlags |= HTTP_AUTH_RETURN;
+            return(TRUE);
+        }
+        //for normal authentication, if we've sent the authentication, or if we have no auth details, then give up
+        else if (
+            (Info->AuthFlags & HTTP_AUTH_SENT) ||
+            (Info->AuthFlags & HTTP_AUTH_RETURN) ||
+            (! StrValid(Info->Authorization))
+        ) return(FALSE);
+        break;
+
+
+    //if we got asked for proxy authentication bu have no auth details, then give up
+    case HTTP_AUTH_PROXY:
+        if (! StrValid(Info->ProxyAuthorization)) return(FALSE);
+        break;
+    }
+
+    //if we get here then there was no questions raised about authentication!
+    return(TRUE);
 }
 
 
 STREAM *HTTPTransact(HTTPInfoStruct *Info)
 {
     int result=HTTP_NOCONNECT;
+    STREAM *S=NULL;
 
+    //we cannot close Info->S within this function, as it may be used by functions outside of this one
+    //so we map it to 'S' and set 'S' to null if connection fails and return that
     while (1)
     {
-        if (! Info->S) Info->S=HTTPConnect(Info);
-        else if (! (Info->State & HTTP_HEADERS_SENT)) HTTPSendHeaders(Info->S,Info);
+        S=HTTPConnect(Info);
 
-        if (Info->S && STREAMIsConnected(Info->S))
+        if (STREAMIsConnected(S))
         {
             Info->ResponseCode=CopyStr(Info->ResponseCode,"");
 
@@ -1202,7 +1078,7 @@ STREAM *HTTPTransact(HTTPInfoStruct *Info)
 
                 if (StrValid(Info->PostData))
                 {
-                    STREAMWriteLine(Info->PostData,Info->S);
+                    STREAMWriteLine(Info->PostData, S);
                     if (Info->Flags & HTTP_DEBUG) fprintf(stderr,"\n%s\n",Info->PostData);
                 }
                 else
@@ -1210,6 +1086,8 @@ STREAM *HTTPTransact(HTTPInfoStruct *Info)
                     if (strcasecmp(Info->Method,"POST")==0) break;
                     if (strcasecmp(Info->Method,"PUT")==0) break;
                     if (strcasecmp(Info->Method,"PATCH")==0) break;
+                    if (strcasecmp(Info->Method,"PROPFIND")==0) break;
+                    if (strcasecmp(Info->Method,"PROPPATCH")==0) break;
                 }
             }
 
@@ -1217,21 +1095,22 @@ STREAM *HTTPTransact(HTTPInfoStruct *Info)
             //Must clear this once the headers and clientdata sent
             Info->State=0;
 
-            HTTPReadHeaders(Info->S,Info);
+            HTTPReadHeaders(S, Info);
             result=HTTPProcessResponse(Info);
-            STREAMSetValue(Info->S,"HTTP:URL",Info->Doc);
+            STREAMSetValue(S,"HTTP:URL",Info->Doc);
 
-            if (Info->Flags & HTTP_CHUNKED) HTTPAddChunkedProcessor(Info->S);
+            //we got redirected somewhere else. Shutdown the current stream and go around again
+            //this time our URL will be the redirected url
+            if (result==HTTP_REDIRECT)
+            {
+                STREAMShutdown(S);
+                continue;
+            }
 
-            if (Info->Flags & HTTP_GZIP)
-            {
-                STREAMAddStandardDataProcessor(Info->S,"uncompress","gzip","");
-            }
-            else if (Info->Flags & HTTP_DEFLATE)
-            {
-                STREAMAddStandardDataProcessor(Info->S,"uncompress","zlib","");
-            }
-            if (Info->Flags & (HTTP_CHUNKED | HTTP_GZIP | HTTP_DEFLATE)) STREAMReBuildDataProcessors(Info->S);
+            //this means we got redirected back to the page we just asked for! this is bad and could
+            //put us in a loop, so we just give up before doing anything else
+            if (result == HTTP_CIRCULAR_REDIRECTS) break;
+
 
             //tranaction succeeded, stop trying, break out of loop
             if (result == HTTP_OKAY) break;
@@ -1239,45 +1118,24 @@ STREAM *HTTPTransact(HTTPInfoStruct *Info)
             if (result == HTTP_NOTFOUND) break;
             if (result == HTTP_NOTMODIFIED) break;
             if (result == HTTP_ERROR) break;
-            if (result == HTTP_CIRCULAR_REDIRECTS) break;
 
 
-            //here this flag just means the server asked us to authenticate
-            if (result == HTTP_AUTH_BASIC)
-            {
-                //if we're using OAUTH then try doing a refresh. Set a flag that means we'll give up if we fail again
-                if (Info->AuthFlags & HTTP_AUTH_OAUTH)
-                {
-                    if (Info->AuthFlags & HTTP_AUTH_RETURN) break;
-                    Info->Authorization=MCopyStr(Info->Authorization, "Bearer ", OAuthLookup(Info->Credentials, TRUE), NULL);
-                    Info->AuthFlags |= HTTP_AUTH_RETURN;
-                }
-                //for normal authentication, if we've sent the authentication, or if we have no auth details, then give up
-                else if (
-                    (Info->AuthFlags & HTTP_AUTH_SENT) ||
-                    (Info->AuthFlags & HTTP_AUTH_RETURN) ||
-                    (StrEnd(Info->Authorization))
-                ) break;
+            //if this returns FALSE, then the server asked us for authentication details and we have nay
+            //but if it returns true it either means that the server didn't ask for this, or else that
+            //we're using something like OAuth, in which case this function will try to refresh our auth
+            //credentials, and return TRUE which means 'try again now'
+            if (! HTTPTransactHandleAuthRequest(Info, result)) break;
 
-            }
-
-            //if we got asked for proxy authentication bu have no auth details, then give up
-            if (
-                (result == HTTP_AUTH_PROXY) &&
-                (StrEnd(Info->ProxyAuthorization))
-            ) break;
-
-
-            //must do this or STREAMClose destroys Info object!
-            STREAMSetItem(Info->S, "HTTP:InfoStruct", NULL);
-            STREAMClose(Info->S);
-            Info->S=NULL;
+            //if we get here then we didn't get a successful http connection, so we set S to null
+            S=NULL;
         }
         else break;
     }
 
+    //add data processors to deal with chunked data, gzip compression etc, because even if the
+    if (S)	HTTPTransactSetupDataProcessors(Info, S);
 
-    return(Info->S);
+    return(S);
 }
 
 
@@ -1384,3 +1242,15 @@ int HTTPGetFlags()
 }
 
 
+
+int HTTPConnectOkay(STREAM *S)
+{
+    const char *ptr;
+
+    if (! S) return(FALSE);
+    ptr=STREAMGetValue(S, "HTTP:ResponseCode");
+    if (! ptr) return(FALSE);
+
+    if (*ptr=='2') return(TRUE);
+    return(FALSE);
+}

@@ -1,11 +1,11 @@
 #include "Unicode.h"
 
-static int UnicodeLevel=0;
+static int GlobalUnicodeLevel=0;
 static ListNode *UnicodeNamesCache=NULL;
 
 void UnicodeSetUTF8(int level)
 {
-    UnicodeLevel=level;
+    GlobalUnicodeLevel=level;
 }
 
 
@@ -120,7 +120,7 @@ unsigned int UnicodeDecode(const char **ptr)
 
 
 
-char *UnicodeStr(char *RetStr, int Code)
+char *UnicodeEncodeChar(char *RetStr, int UnicodeLevel, int Code)
 {
     char *Tempstr=NULL;
 
@@ -137,7 +137,7 @@ char *UnicodeStr(char *RetStr, int Code)
     else
     {
         Tempstr=CopyStr(Tempstr, "?");
-        if ((UnicodeLevel > 2) && (Code < 0x1FFFF)) Tempstr=FormatStr(Tempstr,"%c%c%c%c", (Code >> 18) | 240, ((Code >> 12) & 63) | 128, ((Code >> 6) & 63) | 128, (Code & 63) | 128);
+        if ((UnicodeLevel > 2) && (Code < 0x110000)) Tempstr=FormatStr(Tempstr,"%c%c%c%c", (Code >> 18) | 240, ((Code >> 12) & 63) | 128, ((Code >> 6) & 63) | 128, (Code & 63) | 128);
     }
 
     RetStr=CatStr(RetStr,Tempstr);
@@ -147,7 +147,14 @@ char *UnicodeStr(char *RetStr, int Code)
 }
 
 
-char *UnicodeStrFromName(char *RetStr, const char *Name)
+char *UnicodeStr(char *RetStr, int Code)
+{
+    return(UnicodeEncodeChar(RetStr, GlobalUnicodeLevel, Code));
+}
+
+
+
+char *UnicodeStrFromNameAtLevel(char *RetStr, int UnicodeLevel, const char *Name)
 {
     STREAM *S;
     char *Tempstr=NULL, *Token=NULL;
@@ -166,7 +173,7 @@ char *UnicodeStrFromName(char *RetStr, const char *Name)
 
     Tempstr=CopyStr(Tempstr, LibUsefulGetValue("Unicode:NamesFile"));
     if (StrValid(Tempstr)) Tempstr=CopyStr(Tempstr, getenv("UNICODE_NAMES_FILE"));
-    if (! StrValid(Tempstr)) Tempstr=CopyStr(Tempstr, "/etc/unicode-names.conf");
+    if (! StrValid(Tempstr)) Tempstr=MCopyStr(Tempstr, SYSCONFDIR,  "unicode-names.conf", NULL);
 
     S=STREAMOpen(Tempstr, "r");
     if (S)
@@ -190,5 +197,12 @@ char *UnicodeStrFromName(char *RetStr, const char *Name)
     Destroy(Tempstr);
     Destroy(Token);
 
-    return(UnicodeStr(RetStr, code));
+    return(UnicodeEncodeChar(RetStr, UnicodeLevel, code));
+}
+
+
+
+char *UnicodeStrFromName(char *RetStr, const char *Name)
+{
+    return(UnicodeStrFromNameAtLevel(RetStr, GlobalUnicodeLevel, Name));
 }

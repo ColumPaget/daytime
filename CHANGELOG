@@ -1,0 +1,7 @@
+v4.0 (2024-02-27)
+  * Added ssh support
+  * Added https support
+  * Upgrade to libUseful-5
+  * Support for linking against bundled or installed libUseful
+  * Autoconf/Makefile improvements like use of $DESTDIR during 'make install'
+  * Other minor bugfixes

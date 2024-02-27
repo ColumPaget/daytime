@@ -28,8 +28,8 @@ static const char *ParseHostDetailsExtractAuth(const char *Data, char **User, ch
 
 const char *ParseHostDetails(const char *Data, char **Host,char **Port,char **User, char **Password)
 {
-    char *Token=NULL, *wptr;
-    const char *ptr, *tptr;
+    char *Token=NULL;
+    const char *ptr;
 
     if (Port) *Port=CopyStr(*Port, "");
     if (Host) *Host=CopyStr(*Host, "");
@@ -43,9 +43,9 @@ const char *ParseHostDetails(const char *Data, char **Host,char **Port,char **Us
 //hence we have to enclose them in square braces, which we must handle here
     if (*ptr == '[')
     {
-        tptr=ptr+1;
-        while ((*ptr !=']') && (*ptr !='\0')) ptr++;
-        if (Host) *Host=CopyStrLen(*Host, tptr, ptr-tptr);
+        ptr=GetToken(ptr, "]", &Token, GETTOKEN_APPEND_SEP);
+        if (Host) *Host=CopyStr(*Host, Token);
+        if (*ptr == ':') ptr++;
     }
     else
     {
@@ -95,7 +95,7 @@ void ParseURL(const char *URL, char **Proto, char **Host, char **Port, char **Us
 
     // either we've cut out a protocol, or we haven't. If not the next thing is going to be the hostname
     // maybe there we be a path coming after '/', even if '/' is absent this GetToken will return the Host part
-    ptr=GetToken(ptr,"/",&Token,0);
+    ptr=GetToken(ptr,"/|?",&Token,GETTOKEN_MULTI_SEP);
     ParseHostDetails(Token, Host, Port, User, Password);
 
     if (StrValid(ptr))
@@ -125,13 +125,13 @@ void ParseURL(const char *URL, char **Proto, char **Host, char **Port, char **Us
 
     if (Port && (! StrValid(*Port)) && StrValid(tProto))
     {
-        if (strcmp(tProto,"http")==0) *Port=CopyStr(*Port,"80");
-        else if (strcmp(tProto,"https")==0) *Port=CopyStr(*Port,"443");
-        else if (strcmp(tProto,"ssh")==0) *Port=CopyStr(*Port,"22");
-        else if (strcmp(tProto,"ftp")==0) *Port=CopyStr(*Port,"21");
-        else if (strcmp(tProto,"telnet")==0) *Port=CopyStr(*Port,"23");
-        else if (strcmp(tProto,"smtp")==0) *Port=CopyStr(*Port,"25");
-        else if (strcmp(tProto,"mailto")==0) *Port=CopyStr(*Port,"25");
+        if (CompareStr(tProto,"http")==0) *Port=CopyStr(*Port,"80");
+        else if (CompareStr(tProto,"https")==0) *Port=CopyStr(*Port,"443");
+        else if (CompareStr(tProto,"ssh")==0) *Port=CopyStr(*Port,"22");
+        else if (CompareStr(tProto,"ftp")==0) *Port=CopyStr(*Port,"21");
+        else if (CompareStr(tProto,"telnet")==0) *Port=CopyStr(*Port,"23");
+        else if (CompareStr(tProto,"smtp")==0) *Port=CopyStr(*Port,"25");
+        else if (CompareStr(tProto,"mailto")==0) *Port=CopyStr(*Port,"25");
 
     }
 
@@ -154,8 +154,8 @@ void ParseConnectDetails(const char *Str, char **Type, char **Host, char **Port,
 
     while (ptr)
     {
-        if (strcmp(Token,"-password")==0) ptr=GetToken(ptr," ",Pass,0);
-        else if (strcmp(Token,"-keyfile")==0)
+        if (CompareStr(Token,"-password")==0) ptr=GetToken(ptr," ",Pass,0);
+        else if (CompareStr(Token,"-keyfile")==0)
         {
             ptr=GetToken(ptr," ",&Token,0);
             *Pass=MCopyStr(*Pass,"keyfile:",Token,NULL);
@@ -173,6 +173,9 @@ char *ResolveURL(char *RetStr, const char *Parent, const char *SubItem)
 {
     char *Proto=NULL, *Host=NULL, *Port=NULL, *Path=NULL;
     char *BasePath=NULL;
+
+    //if SubItem contains a '://' then it's a full url
+    if (strstr(SubItem, "://")) return(CopyStr(RetStr, SubItem));
 
     ParseURL(Parent,&Proto,&Host,&Port,NULL,NULL,&Path,NULL);
     if (StrValid(Port)) BasePath=FormatStr(BasePath, "%s://%s:%s/", Proto,Host,Port);

@@ -78,14 +78,9 @@ extern "C" {
 //Check if SSL Is compiled in/ available for use. returns TRUE or FALSE
 int SSLAvailable();
 
-//reseed random number generator. You wouldn't normally call this to be honest
-void OpenSSLReseedRandom();
-
 //is peer authenticated. Clients  can use certificate authentication and this function checks if they
 //did and if the certificate passed checks
 int OpenSSLIsPeerAuth(STREAM *S);
-
-void OpenSSLGenerateDHParams();
 
 //if you connect a stream to something as a client then you can call this function to activate SSL/TLS on the connection
 //currently 'Flags' does nothing, but is included for possible future uses
@@ -95,12 +90,32 @@ int DoSSLClientNegotiation(STREAM *S, int Flags);
 //'Flags' can be any of the LU_SSL_ flags listed above
 int DoSSLServerNegotiation(STREAM *S, int Flags);
 
+//functions internally used by STREAM objects. 
+int OpenSSLSTREAMCheckForBytes(STREAM *S);
+int OpenSSLSTREAMReadBytes(STREAM *S, char *Data, int Len);
+int OpenSSLSTREAMWriteBytes(STREAM *S, const char *Data, int Len);
+
 //This is called automatically by STREAMClose. You won't generally explicitly call this.
 void OpenSSLClose(STREAM *S);
 
 //call this before doing anything else with a STREAM that's been 'accept'-ed from a server socket. If the stream is encrypted
 //with SSL/TLS  this will return TRUE, FALSE otherwise
 int OpenSSLAutoDetect(STREAM *S);
+
+//call certificate verification code. This is normally called automatically by libUseful,
+//and populates the results into SSL:CertificateVerify or SSL:CertificateSubject and SSL:CertificateIssuer.
+//If called on a client side connection it will verify the server certificate,
+//if called on an ACCEPTED server side connection, it will check any client authentication certificates provided
+//'Flags' can be any of the LU_SSL_ flags listed above
+int OpenSSLVerifyCertificate(STREAM *S, int Flags);
+
+
+char *OpenSSLCertDetailsGetCommonName(char *RetStr, const char *CertDetails);
+
+//you can call this to generate a new, random set of DHParams when a server starts up
+//but I wouldn't if I were you. It takes a long time and this function is likely going
+//to be replaced by something more versatile soon
+void OpenSSLGenerateDHParams();
 
 #ifdef __cplusplus
 }

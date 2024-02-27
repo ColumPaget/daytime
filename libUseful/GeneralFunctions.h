@@ -18,8 +18,17 @@ A number of general functions that don't fit anywhere else
 extern "C" {
 #endif
 
-//Destroy is defined in String.c 'cos of StrLen caching, but you can use it to destroy anything
-//void Destroy(void *Obj);
+//Destroy an allocated object. Will not crash if passed NULL. 
+void Destroy(void *Obj);
+
+//reverse bytes within a uint32, There doesn't seem to be a POSIX function for this,
+//hence this one.
+uint32_t reverse_uint32(uint32_t Input);
+
+//take a string of up to 8 '1' and '0' characters and convert them to an integer value
+uint8_t parse_bcd_byte(const char *In);
+
+char *encode_bcd_bytes(char *RetStr, unsigned const char *Bytes, int Len);
 
 //fill 'size' bytes pointed to by 'Str' with char 'fill'. 'Str' is treated as a volatile, which is intended to prevent
 //the compiler from optimizing this function out. Use this function to blank memory holding sensitive information, as
@@ -32,6 +41,9 @@ int xsetenv(const char *Name, const char *Value);
 
 //increment a char * by 'count' but DO NOT GO PAST A NULL CHARACTER. Returns number of bytes actually incremented
 int ptr_incr(const char **ptr, int count);
+
+
+const char *traverse_until(const char *ptr, char terminator);
 
 //treat the first character pointed to by 'ptr' as a quote character. Traverse the string until a matching character is
 //found, then return the character after that. This function ignores characters if they are quoted with a preceeding
@@ -48,50 +60,16 @@ const char *traverse_quoted(const char *ptr);
 //       printf("%s\n",CSV);    //this,that
 char *CommaList(char *RetStr, const char *AddStr);
 
-//return item at 'pos' in array WITHOUT GOING PAST A NULL. Returns NULL if item can't be reached.
-void *ArrayGetItem(void *array[], int pos);
-
-
-//Creates a bunch of random bytes using /dev/urandom if available, otherwise falling back to weaker methods
-int GenerateRandomBytes(char **RetBuff, int ReqLen, int Encoding);
-
-//get a hexidecimamlly encoded random string
-char *GetRandomHexStr(char *RetBuff, int len);
-
-//get a random string containing only the characters in 'AllowedChars'
-char *GetRandomData(char *RetBuff, int len, char *AllowedChars);
-
-//get a random string of alphanumeric characters
-char *GetRandomAlphabetStr(char *RetBuff, int len);
 
 #define SHELLSAFE_BLANK 1
 
 char *MakeShellSafeString(char *RetStr, const char *String, int SafeLevel);
 
-const char *ToSIUnit(double Value, int Base, int Precision);
-#define ToIEC(Value, Precision) (ToSIUnit((Value), 1024, Precision))
-#define ToMetric(Value, Precision) (ToSIUnit((Value), 1000, Precision))
-
-//Convert to and from metric
-double FromSIUnit(const char *Data, int BAse);
-#define FromIEC(Value, Precision) (FromSIUnit((Value), 1024))
-#define FromMetric(Value, Precision) (FromSIUnit((Value), 1000))
-
-
+//remap one fd to another. e.g. change stdin, stdout or stderr to point to a different fd
 int fd_remap(int fd, int newfd);
+
+//open a file, and remap it to fd ONLY if it opened successfully
 int fd_remap_path(int fd, const char *Path, int Flags);
-
-//lookup uid for User
-int LookupUID(const char *User);
-
-//lookup gid for Group
-int LookupGID(const char *Group);
-
-//lookup username from uid
-const char *LookupUserName(uid_t uid);
-
-//lookup groupname from uid
-const char *LookupGroupName(gid_t gid);
 
 
 //given a key generate a hash value using the fnv method. Then mod this value by NoOfItems and return result.

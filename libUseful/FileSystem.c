@@ -1,5 +1,6 @@
 #include "FileSystem.h"
 #include "Errors.h"
+#include "Users.h"
 #include <glob.h>
 //#include <sys/ioctl.h>
 //#include <sys/resource.h>
@@ -132,10 +133,9 @@ int FileChangeExtension(const char *FilePath, const char *NewExt)
 int FileMoveToDir(const char *FilePath, const char *Dir)
 {
     char *Tempstr=NULL;
-    char *ptr;
     int result;
 
-    Tempstr=MCopyStr(Tempstr, Dir, "/", GetBasename(FilePath));
+    Tempstr=MCopyStr(Tempstr, Dir, "/", GetBasename(FilePath), NULL);
     MakeDirPath(Tempstr, 0700);
     result=rename(FilePath,Tempstr);
     if (result !=0) RaiseError(ERRFLAG_ERRNO, "FileMoveToDir", "cannot rename '%s' to '%s'",FilePath, Tempstr);
@@ -257,6 +257,17 @@ int FileChGroup(const char *FileName, const char *Group)
 }
 
 
+int FileChMod(const char *Path, const char *Mode)
+{
+    int perms;
+
+    perms=FileSystemParsePermissions(Mode);
+    if (chmod(Path, perms) ==0) return(TRUE);
+    return(FALSE);
+}
+
+
+
 int FileTouch(const char *Path)
 {
     struct utimbuf times;
@@ -274,6 +285,7 @@ unsigned long FileCopyWithProgress(const char *SrcPath, const char *DestPath, DA
 {
     STREAM *Src;
     unsigned long result;
+    struct stat FStat;
 
     Src=STREAMOpen(SrcPath,"r");
     if (! Src) return(0);
@@ -281,6 +293,8 @@ unsigned long FileCopyWithProgress(const char *SrcPath, const char *DestPath, DA
     if (Callback) STREAMAddProgressCallback(Src,Callback);
     result=STREAMCopy(Src, DestPath);
     STREAMClose(Src);
+    if (stat(SrcPath, &FStat)==0) chmod(DestPath, FStat.st_mode);
+
     return(result);
 }
 
@@ -477,7 +491,7 @@ int FileSystemUnMountFlagsDepth(const char *MountPoint, int UnmountFlags, int Ex
             glob(Path, 0, 0, &Glob);
             for (i=0; i < Glob.gl_pathc; i++)
             {
-                if (stat(Glob.gl_pathv[i],&FStat)==0)
+                if (lstat(Glob.gl_pathv[i],&FStat)==0)
                 {
                     if (S_ISDIR(FStat.st_mode))
                     {
@@ -558,7 +572,7 @@ int FileSystemCopyDir(const char *Src, const char *Dest)
     const char *ptr;
     struct stat Stat;
     char *Tempstr=NULL, *Path=NULL;
-    int i;
+    int i, result, RetVal=FALSE;
 
     Tempstr=MCopyStr(Tempstr, Dest, "/", NULL);
     MakeDirPath(Tempstr, 0777);
@@ -573,26 +587,29 @@ int FileSystemCopyDir(const char *Src, const char *Dest)
         if ((strcmp(ptr,".") !=0) && (strcmp(ptr, "..") !=0) )
         {
             ptr=Glob.gl_pathv[i];
-            lstat(ptr, &Stat);
-
-            Path=MCopyStr(Path, Dest, "/", GetBasename(ptr), NULL);
-            if (S_ISLNK(Stat.st_mode))
+            if (lstat(ptr, &Stat) == 0)
             {
-                Tempstr=SetStrLen(Tempstr, PATH_MAX);
-                readlink(ptr, Tempstr, PATH_MAX);
-                symlink(Path, Tempstr);
-            }
-            else if (S_ISDIR(Stat.st_mode))
-            {
-                FileSystemCopyDir(ptr, Path);
-            }
-            else if (S_ISREG(Stat.st_mode))
-            {
-                FileCopy(ptr, Path);
-            }
-            else
-            {
-                RaiseError(0, "FileSystemCopyDir", "WARNING: not copying %s. Files of this type aren't yet supported for copy", Src);
+                RetVal=TRUE;
+                Path=MCopyStr(Path, Dest, "/", GetBasename(ptr), NULL);
+                if (S_ISLNK(Stat.st_mode))
+                {
+                    Tempstr=SetStrLen(Tempstr, PATH_MAX);
+                    result=readlink(ptr, Tempstr, PATH_MAX);
+                    StrTrunc(Tempstr, result);
+                    result=symlink(Path, Tempstr);
+                }
+                else if (S_ISDIR(Stat.st_mode))
+                {
+                    FileSystemCopyDir(ptr, Path);
+                }
+                else if (S_ISREG(Stat.st_mode))
+                {
+                    FileCopy(ptr, Path);
+                }
+                else
+                {
+                    RaiseError(0, "FileSystemCopyDir", "WARNING: not copying %s. Files of this type aren't yet supported for copy", Src);
+                }
             }
         }
     }
@@ -601,6 +618,8 @@ int FileSystemCopyDir(const char *Src, const char *Dest)
 
     Destroy(Tempstr);
     Destroy(Path);
+
+    return(RetVal);
 }
 
 
@@ -608,6 +627,8 @@ static int FileSystemParsePermissionsTri(const char **ptr, int ReadPerm, int Wri
 {
     int Perms=0;
 
+    if (**ptr=='+') ptr++;
+    if (**ptr=='=') ptr++;
     if (**ptr=='r') Perms |= ReadPerm;
     if (ptr_incr(ptr, 1) ==0) return(Perms);
     if (**ptr=='w') Perms |= WritePerm;

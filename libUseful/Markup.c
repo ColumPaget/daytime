@@ -83,12 +83,7 @@ const char *XMLGetTag(const char *Input, char **Namespace, char **TagType, char 
         }
     }
 
-//End of Parse TagName. Strip any '/'
-    wptr=*TagType;
-    if ((len > 0) && (wptr[len-1]=='/')) len--;
-    wptr[len]='\0';
-    StrLenCacheAdd(*TagType, len);
-
+    StrTrunc(*TagType, len);
     while (isspace(*ptr)) ptr++;
 
 

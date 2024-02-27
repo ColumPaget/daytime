@@ -1,7 +1,16 @@
+/*
+Copyright (c) 2015 Colum Paget <colums.projects@googlemail.com>
+* SPDX-License-Identifier: GPL-3.0
+*/
+
 #ifndef LIBUSEFUL_CMDLINE_H
 #define LIBUSEFUL_CMDLINE_H
 
 #include "includes.h"
+
+// handles parsing a command line, and safely handling iterating through
+// the list of items. Thus, if there is an item that expects to have an
+// argument, but the argument isn't there, CommandLineNext will just return ""
 
 typedef struct
 {

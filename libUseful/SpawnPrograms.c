@@ -2,13 +2,17 @@
 #include "Process.h"
 #include "Log.h"
 #include "Pty.h"
+#include "SecureMem.h"
 #include "Stream.h"
 #include "String.h"
 #include "Errors.h"
 #include "FileSystem.h"
 #include <sys/ioctl.h>
+#include <sys/wait.h>
 
 #define SPAWN_COMBINE_STDERR 1
+#define SPAWN_STDOUT_NULL 2
+#define SPAWN_STDERR_NULL 4
 
 int SpawnParseConfig(const char *Config)
 {
@@ -20,17 +24,10 @@ int SpawnParseConfig(const char *Config)
     while (ptr)
     {
         if (strcasecmp(Token,"+stderr")==0) Flags |= SPAWN_COMBINE_STDERR;
-        else if (strcasecmp(Token,"stderr2null")==0)
-        {
-            close(2);
-            open("/dev/null", O_WRONLY);
-        }
-        else if (strcasecmp(Token,"stdout2null")==0)
-        {
-            close(1);
-            open("/dev/null", O_WRONLY);
-        }
-
+        else if (strcasecmp(Token,"stderr2null")==0) Flags |= SPAWN_STDERR_NULL;
+        else if (strcasecmp(Token,"stdout2null")==0) Flags |= SPAWN_STDOUT_NULL;
+        else if (strcasecmp(Token,"errnull")==0) Flags |= SPAWN_STDERR_NULL;
+        else if (strcasecmp(Token,"outnull")==0) Flags |= SPAWN_STDOUT_NULL | SPAWN_STDERR_NULL;
 
         ptr=GetToken(ptr," |,",&Token,GETTOKEN_MULTI_SEP);
     }
@@ -50,15 +47,17 @@ int BASIC_FUNC_EXEC_COMMAND(void *Command, int Flags)
     char *Token=NULL, *FinalCommand=NULL, *ExecPath=NULL;
     char **argv;
     const char *ptr;
+    int max_arg=100;
     int i;
 
     if (Flags & SPAWN_TRUST_COMMAND) FinalCommand=CopyStr(FinalCommand, (char *) Command);
     else FinalCommand=MakeShellSafeString(FinalCommand, (char *) Command, 0);
 
     StripTrailingWhitespace(FinalCommand);
+
     if (Flags & SPAWN_NOSHELL)
     {
-        argv=(char **) calloc(101,sizeof(char *));
+        argv=(char **) calloc(max_arg+10,sizeof(char *));
         ptr=FinalCommand;
         ptr=GetToken(FinalCommand,"\\S",&Token,GETTOKEN_QUOTES);
         ExecPath=FindFileInPath(ExecPath,Token,getenv("PATH"));
@@ -70,7 +69,7 @@ int BASIC_FUNC_EXEC_COMMAND(void *Command, int Flags)
             i=1;
         }
 
-        for (; i < 100; i++)
+        for (; i < max_arg; i++)
         {
             ptr=GetToken(ptr,"\\S",&Token,GETTOKEN_QUOTES);
             if (! ptr) break;
@@ -101,7 +100,14 @@ pid_t xfork(const char *Config)
     if (pid==-1) RaiseError(ERRFLAG_ERRNO, "fork", "");
     if (pid==0)
     {
-        ProcessApplyConfig(Config);
+        //we must handle creds store straight away, because it's memory is likely configured
+        //with SMEM_NOFORK and thus the memory is invalid on fork
+        CredsStoreOnFork();
+        if (StrValid(Config))
+        {
+            //if any of the process configs we asked for failed, then quit
+            if (ProcessApplyConfig(Config) & PROC_SETUP_FAIL) _exit(1);
+        }
     }
     return(pid);
 }
@@ -175,6 +181,30 @@ pid_t SpawnWithIO(const char *CommandLine, const char *Config, int StdIn, int St
 }
 
 
+//This creates an STDIO pipe, unless 'ToNull' is true
+static int PipeSpawnCreateStdOutPipe(const char *Type, int channel[2], int ToNull)
+{
+int fd=-1, result;
+
+channel[0]=-1;
+channel[1]=-1;
+
+//if we ask for this to be set to null, then we map leave fd set to -1
+//which maps to /dev/null in xforkio
+if (! ToNull) 
+{
+	result=pipe(channel);
+  if (result==0) 
+	{
+	  if (strcmp(Type, "stdin")==0) fd=channel[0];
+		else fd=channel[1];
+	}
+  else RaiseError(ERRFLAG_ERRNO, "PipeSpawnFunction", "Failed to create pipe for %s", Type);
+}
+
+return(fd);
+}
+
 
 /* This creates a child process that we can talk to using a couple of pipes*/
 pid_t PipeSpawnFunction(int *infd, int *outfd, int *errfd, BASIC_FUNC Func, void *Data, const char *Config)
@@ -182,46 +212,24 @@ pid_t PipeSpawnFunction(int *infd, int *outfd, int *errfd, BASIC_FUNC Func, void
     pid_t pid;
     //default these to stdin, stdout and stderr and then override those later
     int c1=0, c2=1, c3=2;
-    int channel1[2], channel2[2], channel3[2], DevNull=-1;
-    int Flags;
-
+    int channel1[2], channel2[2], channel3[2];
+    int result;
+    int Flags=0;
 
     Flags=SpawnParseConfig(Config);
-    if (infd)
-    {
-        pipe(channel1);
-        //this is a read channel, so pipe[0]
-        c1=channel1[0];
-    }
+    if (infd) c1=PipeSpawnCreateStdOutPipe("stdin", channel1, 0);
+    if (outfd) c2=PipeSpawnCreateStdOutPipe("stdout", channel2, Flags & SPAWN_STDOUT_NULL);
 
-    if (outfd)
-    {
-        pipe(channel2);
-        //this is a write channel, so pipe[1]
-        c2=channel2[1];
-    }
-
-    if (errfd)
-    {
-        pipe(channel3);
-        //this is a write channel, so pipe[1]
-        c3=channel3[1];
-    }
+    if (errfd) c3=PipeSpawnCreateStdOutPipe("stderr", channel3, Flags & SPAWN_STDERR_NULL);
     else if (Flags & SPAWN_COMBINE_STDERR) c3=c2;
-
 
     pid=xforkio(c1, c2, c3);
     if (pid==0)
     {
-        /* we are the child */
+        /* we are the child, so we close the appropriate sites of the pipe for our connection */
         if (infd) close(channel1[1]);
-        else if (DevNull==-1) DevNull=open("/dev/null",O_RDWR);
-
         if (outfd) close(channel2[0]);
-        else if (DevNull==-1) DevNull=open("/dev/null",O_RDWR);
-
         if (errfd) close(channel3[0]);
-        else if (DevNull==-1) DevNull=open("/dev/null",O_RDWR);
 
         //if Func is NULL we effectively do a fork, rather than calling a function we just
         //continue exectution from where we were
@@ -239,12 +247,15 @@ pid_t PipeSpawnFunction(int *infd, int *outfd, int *errfd, BASIC_FUNC Func, void
         {
             close(channel1[0]);
             *infd=channel1[1];
+						if (*infd == -1) *infd=open("/dev/null", O_RDWR);
         }
         if (outfd)
         {
             close(channel2[1]);
             *outfd=channel2[0];
+						if (*outfd == -1) *outfd=open("/dev/null", O_RDWR);
         }
+
         if (errfd)
         {
             close(channel3[1]);
@@ -269,7 +280,7 @@ pid_t PipeSpawn(int *infd,int  *outfd,int  *errfd, const char *Command, const ch
 
 pid_t PseudoTTYSpawnFunction(int *ret_pty, BASIC_FUNC Func, void *Data, int Flags, const char *Config)
 {
-    pid_t pid=-1, ConfigFlags;
+    pid_t pid=-1, ConfigFlags=0;
     int tty, pty, i;
 
     if (PseudoTTYGrab(&pty, &tty, Flags))
@@ -279,10 +290,7 @@ pid_t PseudoTTYSpawnFunction(int *ret_pty, BASIC_FUNC Func, void *Data, int Flag
         {
             close(pty);
 
-            //doesn't seem to exist under macosx!
-#ifdef TIOCSCTTY
-            ioctl(tty,TIOCSCTTY,0);
-#endif
+            ProcessSetControlTTY(tty);
             setsid();
 
             ///now that we've dupped it, we don't need to keep it open
@@ -365,15 +373,100 @@ STREAM *STREAMSpawnFunction(BASIC_FUNC Func, void *Data, const char *Config)
 STREAM *STREAMSpawnCommand(const char *Command, const char *Config)
 {
     char *Token=NULL, *ExecPath=NULL;
+    const char *ptr;
     STREAM *S=NULL;
+    int UseShell=TRUE;
+
+    //if 'noshell' exists in Config, then we want to do more checking (i.e. exe to be launched must exist on disk)
+    //otherwise this could be a shell command that doesn't exist on disk
+    ptr=GetToken(Config, "\\S", &Token, GETTOKEN_QUOTES);
+    while (ptr)
+    {
+        if (CompareStr(Token, "noshell")==0) UseShell=FALSE;
+        ptr=GetToken(ptr, "\\S", &Token, GETTOKEN_QUOTES);
+    }
 
     GetToken(Command, "\\S", &Token, GETTOKEN_QUOTES);
     ExecPath=FindFileInPath(ExecPath,Token,getenv("PATH"));
 
-    if (StrValid(ExecPath)) S=STREAMSpawnFunction(BASIC_FUNC_EXEC_COMMAND, (void *) Command, Config);
+    //take a copy of this as it's going to be passed to another process and
+    Token=CopyStr(Token, Command);
+    if (UseShell || StrValid(ExecPath)) S=STREAMSpawnFunction(BASIC_FUNC_EXEC_COMMAND, (void *) Token, Config);
 
     Destroy(ExecPath);
     Destroy(Token);
 
     return(S);
+}
+
+
+
+int STREAMSpawnCommandAndPty(const char *Command, const char *Config, STREAM **CmdS, STREAM **PtyS)
+{
+    int pty, tty;
+    int result=FALSE;
+    char *Tempstr=NULL, *Args=NULL, *Token=NULL;
+    const char *ptr;
+
+    *PtyS=NULL;
+    *CmdS=NULL;
+
+    if (PseudoTTYGrab(&pty, &tty, TTYFLAG_PTY))
+    {
+        //handle situation where Config might be null
+        if (StrValid(Config)) Tempstr=CopyStr(Tempstr, Config);
+        else Tempstr=CopyStr(Tempstr, "rw");
+
+        Args=FormatStr(Args, "%s setsid ctty=%d nosig ", Tempstr, tty);
+        ptr=GetToken(Config, "\\S", &Token, 0);
+        while (ptr)
+        {
+            if (strcmp(Token, "ptystderr")==0)
+            {
+                Tempstr=FormatStr(Tempstr, "stderr=%d", tty);
+                Args=CatStr(Args, Tempstr);
+            }
+            ptr=GetToken(ptr, "\\S", &Token, 0);
+        }
+
+        Tempstr=MCopyStr(Tempstr, "cmd:", Command, NULL);
+        *CmdS=STREAMOpen(Tempstr, Args);
+        if (*CmdS)
+        {
+            *PtyS=STREAMFromFD(pty);
+            STREAMSetTimeout(*PtyS, 1000);
+            result=TRUE;
+        }
+    }
+
+    Destroy(Tempstr);
+    Destroy(Token);
+    Destroy(Args);
+
+    return(result);
+}
+
+
+int STREAMSpawnWaitExit(STREAM *S)
+{
+    char *Tempstr=NULL;
+    pid_t pid;
+    int result, status, exited=-1;
+
+    STREAMCommit(S);
+    pid=atoi(STREAMGetValue(S, "PeerPID"));
+    STREAMSetTimeout(S, 10);
+    Tempstr=SetStrLen(Tempstr, 4096);
+    result=STREAMReadBytes(S, Tempstr, 4096);
+    while (result != STREAM_CLOSED)
+    {
+        exited=waitpid(pid, &status, WNOHANG);
+        if (exited == pid) break;
+        result=STREAMReadBytes(S, Tempstr, 4096);
+    }
+
+    if (exited != pid) waitpid(pid, &status, 0);
+
+    Destroy(Tempstr);
+    return(status);
 }
